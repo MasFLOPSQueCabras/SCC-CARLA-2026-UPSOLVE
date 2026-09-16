@@ -117,3 +117,24 @@ def reset_cluster_state(db_path: Path) -> None:
             "UPDATE nodes SET state = ?, pubkey = NULL, bios_profile = 'factory_baseline', last_updated = ?",
             (NodeLifecycle.UNPROVISIONED.value, now),
         )
+
+
+def update_node_state(
+    db_path: Path,
+    node_id: int,
+    state: NodeLifecycle,
+    pubkey: str | None = None,
+) -> None:
+    with get_db(db_path) as conn:
+        cur = conn.cursor()
+        now = datetime.now(UTC).isoformat()
+        if pubkey is not None:
+            cur.execute(
+                "UPDATE nodes SET state = ?, pubkey = ?, last_updated = ? WHERE node_id = ?",
+                (state.value, pubkey, now, node_id),
+            )
+        else:
+            cur.execute(
+                "UPDATE nodes SET state = ?, last_updated = ? WHERE node_id = ?",
+                (state.value, now, node_id),
+            )

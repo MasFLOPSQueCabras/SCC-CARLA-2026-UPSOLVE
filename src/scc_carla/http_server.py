@@ -1,8 +1,6 @@
 import socket
 import subprocess
 import time
-from collections.abc import Generator
-from contextlib import contextmanager
 from pathlib import Path
 from typing import Self
 
@@ -55,27 +53,21 @@ class EphemeralRangeHTTPServer:
                 stderr=subprocess.DEVNULL,
             )
         else:
-            remote_cmd = (
-                f"mkdir -p {self.serve_path} && cd {self.serve_path} && "
-                f"nohup python3 -m RangeHTTPServer {self.port} --bind {self.bind_ip} >/dev/null 2>&1 & echo $!"
+            stop_cmd = (
+                f"systemctl --user stop scc_http_{self.port} 2>/dev/null || true; "
+                f"systemctl --user reset-failed scc_http_{self.port} 2>/dev/null || true"
             )
-            res = subprocess.run(
+            subprocess.run(["ssh", self.bastion_ssh_host, stop_cmd], check=False)
+            remote_cmd = (
+                f"systemd-run --user --collect --unit=scc_http_{self.port} "
+                f"sh -c 'cd ~/scc_serve && exec python3 -m RangeHTTPServer {self.port} --bind {self.bind_ip}'"
+            )
+            subprocess.run(
                 ["ssh", self.bastion_ssh_host, remote_cmd],
                 capture_output=True,
                 text=True,
                 check=True,
             )
-            pid_str = res.stdout.strip()
-            if pid_str.isdigit():
-                self.remote_pid = int(pid_str)
-                subprocess.run(
-                    [
-                        "ssh",
-                        self.bastion_ssh_host,
-                        f"echo {self.remote_pid} > ~/.scc_http_{self.port}.pid",
-                    ],
-                    check=False,
-                )
         time.sleep(1)
 
     def stop(self) -> None:
@@ -84,12 +76,12 @@ class EphemeralRangeHTTPServer:
             self.local_proc = None
         else:
             self.sweep_remote(self.bastion_ssh_host, self.port)
-            self.remote_pid = None
 
     @classmethod
     def sweep_remote(cls, bastion_ssh_host: str, port: int) -> None:
         cmd = (
-            f"if [ -f ~/.scc_http_{port}.pid ]; then kill $(cat ~/.scc_http_{port}.pid) 2>/dev/null || true; rm -f ~/.scc_http_{port}.pid; fi; "
+            f"systemctl --user stop scc_http_{port} 2>/dev/null || true; "
+            f"systemctl --user reset-failed scc_http_{port} 2>/dev/null || true; "
             f"pkill -f 'RangeHTTPServer {port}' 2>/dev/null || true"
         )
         try:
@@ -102,25 +94,3 @@ class EphemeralRangeHTTPServer:
             )
         except subprocess.SubprocessError, OSError:
             return
-
-
-@contextmanager
-def ephemeral_http_server(
-    port: int,
-    bind_ip: str,
-    bastion_ssh_host: str,
-    bastion_hostname: str,
-    serve_dir: Path | None = None,
-) -> Generator[EphemeralRangeHTTPServer]:
-    srv = EphemeralRangeHTTPServer(
-        port=port,
-        bind_ip=bind_ip,
-        bastion_ssh_host=bastion_ssh_host,
-        bastion_hostname=bastion_hostname,
-        serve_dir=serve_dir,
-    )
-    try:
-        srv.start()
-        yield srv
-    finally:
-        srv.stop()

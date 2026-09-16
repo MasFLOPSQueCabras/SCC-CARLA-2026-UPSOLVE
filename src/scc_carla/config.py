@@ -16,7 +16,7 @@ class ClusterSettings(BaseSettings):
     team_id: int = 72
     bastion_ssh_host: str = "scc-bastion"
     bastion_hostname: str = "carlanga"
-    bastion_http_ip: str = "200.16.29.171"
+    bastion_http_ip: str = "10.7.12.101"
     bastion_http_port: int = 8072
     gateway_ip: str = "10.2.72.254"
     dns_ip: str = "10.2.72.254"
