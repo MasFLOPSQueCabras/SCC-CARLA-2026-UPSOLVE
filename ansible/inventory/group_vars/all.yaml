@@ -1,0 +1,34 @@
+---
+# Cluster Identifiers & User
+team_id: 72
+cluster_domain: cluster
+cluster_user: scct-2672
+cluster_user_home: "/home/{{ cluster_user }}"
+
+# Subnets & Interfaces
+mgmt_network: "10.2.{{ team_id }}.0/24"
+gateway_ip: "10.2.{{ team_id }}.254"
+dns_ip: "10.2.{{ team_id }}.254"
+
+ib_interface: "ibs5f0"
+ib_network: "10.10.{{ team_id }}.0/24"
+ib_subnet_cidr: 24
+
+# Storage Configuration (NFS over 100G InfiniBand)
+nfs_server_host: "node1"
+nfs_server_ib_ip: "10.10.{{ team_id }}.1"
+nfs_export_dir: "/home/shared"
+nfs_mount_dir: "/shared"
+nfs_mount_options: "rw,noatime,rsize=1048576,wsize=1048576,hard,intr,proto=tcp"
+
+# Spack & Software Paths
+spack_root: "{{ nfs_mount_dir }}/spack"
+spack_repo_url: "https://github.com/spack/spack.git"
+spack_branch: "releases/v0.23"
+
+# HPC System Tuning Parameters
+sysctl_numa_balancing: 0
+sysctl_swappiness: 10
+sysctl_dirty_ratio: 40
+sysctl_dirty_background_ratio: 10
+sysctl_zone_reclaim_mode: 0

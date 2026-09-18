@@ -3,5 +3,12 @@
   hosts: cluster
   become: true
   roles:
-    - common
-    - infiniband
+    - role: common
+    - role: infiniband
+    - role: cluster_ssh
+    - role: nfs_server
+      when: inventory_hostname == nfs_server_host
+    - role: nfs_client
+    - role: hpc_tune
+    - role: spack
+    - role: hpl

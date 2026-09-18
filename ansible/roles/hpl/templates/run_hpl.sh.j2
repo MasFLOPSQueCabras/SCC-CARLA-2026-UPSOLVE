@@ -1,0 +1,76 @@
+#!/bin/bash
+# HPL Benchmark Runner (Direct MPI over 100G InfiniBand, Zero SLURM overhead)
+set -e
+
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$DIR"
+
+# Source Spack environment and locate OpenMPI
+if [ -f "/etc/profile.d/spack.sh" ]; then
+    source /etc/profile.d/spack.sh 2>/dev/null || true
+    if command -v spack &>/dev/null; then
+        MPI_DIR=$(spack location -i openmpi 2>/dev/null || true)
+        if [ -n "$MPI_DIR" ]; then
+            export PATH="$MPI_DIR/bin:$PATH"
+            export LD_LIBRARY_PATH="$MPI_DIR/lib:${LD_LIBRARY_PATH:-}"
+        fi
+    fi
+fi
+
+# Fallback: source system MPI environment if present
+if [ -d "/usr/lib64/openmpi/bin" ]; then
+    export PATH=/usr/lib64/openmpi/bin:$PATH
+    export LD_LIBRARY_PATH=/usr/lib64/openmpi/lib:${LD_LIBRARY_PATH:-}
+fi
+
+# Ensure xhpl is in bin
+if [ ! -f "$DIR/bin/xhpl" ]; then
+    XHPL_LOC=$(which xhpl 2>/dev/null || true)
+    if [ -n "$XHPL_LOC" ]; then
+        mkdir -p "$DIR/bin"
+        cp -f "$XHPL_LOC" "$DIR/bin/xhpl"
+    fi
+fi
+
+# Environment optimizations for Skylake-SP AVX-512 and InfiniBand
+export OMP_NUM_THREADS=1
+export MKL_NUM_THREADS=1
+export OPENBLAS_NUM_THREADS=1
+export UCX_NET_DEVICES=mlx5_0:1
+export UCX_TLS=rc,sm,self
+
+# Ensure HPL.dat is in the working directory
+if [ -f "$DIR/configs/HPL.dat" ]; then
+    cp -f "$DIR/configs/HPL.dat" "$DIR/HPL.dat"
+fi
+
+HOSTFILE="$DIR/hosts.txt"
+cat > "$HOSTFILE" << 'EOF'
+{% for host in ansible_play_hosts %}
+{{ hostvars[host]['ib_ip'] }}:36
+{% endfor %}
+EOF
+
+# Calculate total ranks based on active hosts (36 cores per host)
+HOST_COUNT=$(grep -c "^[0-9]" "$HOSTFILE" || echo 1)
+RANKS=$(( HOST_COUNT * 36 ))
+
+echo "============================================================"
+echo "Starting HPL benchmark across $HOST_COUNT nodes ($RANKS ranks)"
+echo "Hosts: $(cat $HOSTFILE | tr '\n' ' ')"
+echo "Matrix Size (N): $(grep -w 'Ns' $DIR/HPL.dat | awk '{print $1}')"
+echo "Block Size (NB): $(grep -w 'NBs' $DIR/HPL.dat | awk '{print $1}')"
+echo "Process Grid: $(grep -w 'Ps' $DIR/HPL.dat | awk '{print $1}') x $(grep -w 'Qs' $DIR/HPL.dat | awk '{print $1}')"
+echo "============================================================"
+
+mpirun -np $RANKS \
+    --hostfile "$HOSTFILE" \
+    --bind-to core \
+    --map-by core \
+    -x PATH \
+    -x LD_LIBRARY_PATH \
+    -x OMP_NUM_THREADS \
+    -x UCX_NET_DEVICES \
+    -x UCX_TLS \
+    --mca pml ucx \
+    "$DIR/bin/xhpl"

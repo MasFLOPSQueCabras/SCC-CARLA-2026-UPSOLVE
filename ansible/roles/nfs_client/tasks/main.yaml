@@ -1,0 +1,40 @@
+---
+- name: Install NFS client utilities
+  ansible.builtin.dnf:
+    name:
+      - nfs-utils
+    state: present
+
+- name: Create /shared directory on client nodes
+  ansible.builtin.file:
+    path: "{{ nfs_mount_dir }}"
+    state: directory
+    owner: "{{ cluster_user }}"
+    group: "{{ cluster_user }}"
+    mode: '0777'
+  when: inventory_hostname != nfs_server_host
+
+- name: Mount /shared from NFS server over InfiniBand
+  ansible.posix.mount:
+    path: "{{ nfs_mount_dir }}"
+    src: "{{ nfs_server_ib_ip }}:{{ nfs_export_dir }}"
+    fstype: nfs
+    opts: "{{ nfs_mount_options }}"
+    state: mounted
+  when: inventory_hostname != nfs_server_host
+
+- name: Ensure /shared symlink exists on NFS server node
+  ansible.builtin.file:
+    src: "{{ nfs_export_dir }}"
+    dest: "{{ nfs_mount_dir }}"
+    state: link
+    force: true
+  when: inventory_hostname == nfs_server_host
+
+- name: Ensure export dir symlink exists on client nodes for identical RPATH
+  ansible.builtin.file:
+    src: "{{ nfs_mount_dir }}"
+    dest: "{{ nfs_export_dir }}"
+    state: link
+    force: true
+  when: inventory_hostname != nfs_server_host

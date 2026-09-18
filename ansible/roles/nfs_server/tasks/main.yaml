@@ -1,0 +1,60 @@
+---
+- name: Install NFS server utilities
+  ansible.builtin.dnf:
+    name:
+      - nfs-utils
+    state: present
+
+- name: Create shared export directory
+  ansible.builtin.file:
+    path: "{{ nfs_export_dir }}"
+    state: directory
+    owner: "{{ cluster_user }}"
+    group: "{{ cluster_user }}"
+    mode: '0777'
+
+- name: Configure /etc/exports
+  ansible.builtin.copy:
+    dest: /etc/exports
+    content: |
+      {{ nfs_export_dir }} {{ ib_network }}(rw,sync,no_root_squash,no_subtree_check) {{ mgmt_network }}(rw,sync,no_root_squash,no_subtree_check)
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart NFS Server
+
+- name: Apply exportfs
+  ansible.builtin.command: exportfs -ra
+  changed_when: false
+
+- name: Ensure NFS server service is enabled and started
+  ansible.builtin.systemd_service:
+    name: nfs-server
+    state: started
+    enabled: true
+
+- name: Allow NFS services in public firewalld zone
+  ansible.posix.firewalld:
+    service: "{{ item }}"
+    zone: public
+    permanent: true
+    state: enabled
+    immediate: true
+  loop:
+    - nfs
+    - rpc-bind
+    - mountd
+  ignore_errors: true
+
+- name: Allow NFS services in trusted firewalld zone
+  ansible.posix.firewalld:
+    service: "{{ item }}"
+    zone: trusted
+    permanent: true
+    state: enabled
+    immediate: true
+  loop:
+    - nfs
+    - rpc-bind
+    - mountd
+  ignore_errors: true

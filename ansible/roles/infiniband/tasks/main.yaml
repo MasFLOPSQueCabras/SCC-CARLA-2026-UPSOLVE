@@ -25,29 +25,29 @@
   register: nmcli_con_show
   changed_when: false
 
-- name: Create NetworkManager connection for ibs5f0 if missing
+- name: Create NetworkManager connection for InfiniBand if missing
   ansible.builtin.command: >
-    nmcli con add type infiniband con-name ibs5f0 ifname ibs5f0 ip4 {{ ib_ip }}/24 autoconnect yes
-  when: "'ibs5f0' not in nmcli_con_show.stdout_lines"
+    nmcli con add type infiniband con-name {{ ib_interface }} ifname {{ ib_interface }} ip4 {{ ib_ip }}/{{ ib_subnet_cidr }} autoconnect yes
+  when: "ib_interface not in nmcli_con_show.stdout_lines"
 
-- name: Ensure static IP and autoconnect on ibs5f0
+- name: Ensure static IP and autoconnect on InfiniBand interface
   ansible.builtin.command: >
-    nmcli con mod ibs5f0 ipv4.addresses {{ ib_ip }}/24 ipv4.method manual autoconnect yes
+    nmcli con mod {{ ib_interface }} ipv4.addresses {{ ib_ip }}/{{ ib_subnet_cidr }} ipv4.method manual autoconnect yes
   changed_when: false
 
-- name: Check ibs5f0 device connection state
-  ansible.builtin.command: nmcli -g GENERAL.STATE dev show ibs5f0
-  register: ibs5f0_dev_state
+- name: Check InfiniBand device connection state
+  ansible.builtin.command: nmcli -g GENERAL.STATE dev show {{ ib_interface }}
+  register: ib_dev_state
   changed_when: false
 
-- name: Ensure ibs5f0 connection is activated
-  ansible.builtin.command: nmcli con up ibs5f0
-  when: "'100 (connected)' not in ibs5f0_dev_state.stdout"
+- name: Ensure InfiniBand connection is activated
+  ansible.builtin.command: nmcli con up {{ ib_interface }}
+  when: "'100 (connected)' not in ib_dev_state.stdout"
 
-- name: Assign ibs5f0 to trusted firewalld zone
+- name: Assign InfiniBand interface to trusted firewalld zone
   ansible.posix.firewalld:
     zone: trusted
-    interface: ibs5f0
+    interface: "{{ ib_interface }}"
     permanent: true
     state: enabled
     immediate: true

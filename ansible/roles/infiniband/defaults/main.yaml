@@ -1,0 +1,3 @@
+---
+ib_interface: "ibs5f0"
+ib_subnet_cidr: 24

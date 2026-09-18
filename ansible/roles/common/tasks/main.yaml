@@ -1,17 +1,13 @@
 ---
-- name: Ensure cluster nodes and IPoIB interfaces are mapped in /etc/hosts
-  ansible.builtin.blockinfile:
-    path: /etc/hosts
-    marker: "# {mark} ANSIBLE MANAGED CLUSTER HOSTS"
-    block: |
-      10.2.{{ team_id }}.1 node1
-      10.2.{{ team_id }}.2 node2
-      10.2.{{ team_id }}.3 node3
-      10.10.{{ team_id }}.1 node1-ib
-      10.10.{{ team_id }}.2 node2-ib
-      10.10.{{ team_id }}.3 node3-ib
+- name: Deploy dynamic /etc/hosts from inventory
+  ansible.builtin.template:
+    src: hosts.j2
+    dest: /etc/hosts
+    owner: root
+    group: root
+    mode: '0644'
 
-- name: Install base operational packages
+- name: Install base operational and compilation packages
   ansible.builtin.dnf:
     name:
       - pciutils
@@ -20,6 +16,29 @@
       - tmux
       - tar
       - curl
+      - make
+      - patch
+      - bzip2
+      - unzip
+      - file
+      - gcc
+      - gcc-c++
+      - gcc-gfortran
+      - bison
+      - flex
+      - m4
+      - autoconf
+      - automake
+      - libtool
+      - cmake
+      - rdma-core-devel
+      - hwloc-devel
+      - libevent-devel
+      - libxml2-devel
+      - numactl-devel
+      - openssl
+      - openssl-devel
+      - hwloc
     state: present
 
 - name: Ensure firewalld is enabled and running
