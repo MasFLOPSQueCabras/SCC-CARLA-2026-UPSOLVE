@@ -85,19 +85,19 @@ uv run scc-carla power status
 # Inspect a specific node
 uv run scc-carla power status -n 1
 
-# Power on node(s) to boot existing installed OS
-uv run scc-carla power on -n 1
-uv run scc-carla power on -a
+# Power on node(s) and wait until confirmed ON
+uv run scc-carla power on -n 1 --wait
+uv run scc-carla power on -a -w
 
-# Power off node(s) gracefully (OS shutdown)
-uv run scc-carla power off -n 1
+# Power off node(s) gracefully and wait until confirmed OFF
+uv run scc-carla power off -n 1 --wait
 
 # Force immediate hardware power off
-uv run scc-carla power off -n 1 --force
+uv run scc-carla power off -n 1 --force -w
 
-# Reboot / restart node(s) gracefully or forcefully
-uv run scc-carla power restart -n 1
-uv run scc-carla power restart -n 1 --force
+# Reboot / restart node(s) and wait until confirmed ON
+uv run scc-carla power restart -n 1 --wait
+uv run scc-carla power restart -n 1 --force -w
 ```
 
 ---

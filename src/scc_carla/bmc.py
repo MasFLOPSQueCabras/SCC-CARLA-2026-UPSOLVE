@@ -231,7 +231,7 @@ class BMCController:
                     "/redfish/v1/Systems/1/Actions/ComputerSystem.Reset/",
                     {"ResetType": reset_type},
                 )
-                if resp.status_code in (200, 204):
+                if resp.status_code in (200, 204) or "Power is off" in resp.text:
                     return True
                 if graceful:
                     logger.debug(
@@ -243,7 +243,7 @@ class BMCController:
                         "/redfish/v1/Systems/1/Actions/ComputerSystem.Reset/",
                         {"ResetType": "ForceOff"},
                     )
-                    return resp.status_code in (200, 204)
+                    return resp.status_code in (200, 204) or "Power is off" in resp.text
                 return False
         except (httpx2.HTTPError, OSError) as err:
             logger.debug("Failed to power off Node %s: %s", node_id, err)
@@ -256,7 +256,7 @@ class BMCController:
                     "/redfish/v1/Systems/1/Actions/ComputerSystem.Reset/",
                     {"ResetType": "On"},
                 )
-                return resp.status_code in (200, 204)
+                return resp.status_code in (200, 204) or "Power is on" in resp.text
         except (httpx2.HTTPError, OSError) as err:
             logger.debug("Failed to power on Node %s: %s", node_id, err)
             return False

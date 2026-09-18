@@ -1,3 +1,5 @@
+import time
+
 from rich.console import Console
 from rich.table import Table
 
@@ -9,10 +11,28 @@ from scc_carla.nodes import resolve_target_nodes
 console = Console()
 
 
+def _wait_for_power_state(
+    bmc: BMCController,
+    node_id: int,
+    expected_state: str,
+    timeout_sec: int = 60,
+    poll_interval: float = 2.0,
+) -> bool:
+    start_time = time.time()
+    while time.time() - start_time < timeout_sec:
+        state = bmc.get_power_status(node_id)
+        if state == expected_state:
+            return True
+        time.sleep(poll_interval)
+    return False
+
+
 def power_on_command(
     settings: ClusterSettings,
     node: int | None = None,
     all_nodes: bool = False,
+    wait: bool = False,
+    wait_timeout: int = 60,
     force_lock: bool = False,
 ) -> None:
     try:
@@ -39,6 +59,16 @@ def power_on_command(
                     success = bmc.power_on(n)
                 if success:
                     console.print(f"[green]✓[/green] Power on signal sent to {hostname}.")
+                    if wait:
+                        with console.status(
+                            f"[cyan]Waiting for {hostname} power state -> ON...[/cyan]"
+                        ):
+                            if _wait_for_power_state(bmc, n, "ON", timeout_sec=wait_timeout):
+                                console.print(f"[bold green]✓ {hostname} is confirmed ON.[/bold green]")
+                            else:
+                                console.print(
+                                    f"[bold yellow]Timed out waiting for {hostname} to reach ON.[/bold yellow]"
+                                )
                 else:
                     console.print(f"[bold red]Failed to power on {hostname}.[/bold red]")
     except LockError as e:
@@ -53,6 +83,8 @@ def power_off_command(
     node: int | None = None,
     all_nodes: bool = False,
     graceful: bool = True,
+    wait: bool = False,
+    wait_timeout: int = 60,
     force_lock: bool = False,
 ) -> None:
     try:
@@ -81,8 +113,18 @@ def power_off_command(
                 if success:
                     update_node_state(settings, n, NodeLifecycle.OFFLINE)
                     console.print(
-                        f"[green]✓[/green] {hostname} powered off ({mode_str}) and marked OFFLINE."
+                        f"[green]✓[/green] Power off signal sent to {hostname} ({mode_str})."
                     )
+                    if wait:
+                        with console.status(
+                            f"[cyan]Waiting for {hostname} power state -> OFF...[/cyan]"
+                        ):
+                            if _wait_for_power_state(bmc, n, "OFF", timeout_sec=wait_timeout):
+                                console.print(f"[bold green]✓ {hostname} is confirmed OFF.[/bold green]")
+                            else:
+                                console.print(
+                                    f"[bold yellow]Timed out waiting for {hostname} to reach OFF.[/bold yellow]"
+                                )
                 else:
                     console.print(f"[bold red]Failed to power off {hostname}.[/bold red]")
     except LockError as e:
@@ -97,6 +139,8 @@ def power_restart_command(
     node: int | None = None,
     all_nodes: bool = False,
     graceful: bool = True,
+    wait: bool = False,
+    wait_timeout: int = 60,
     force_lock: bool = False,
 ) -> None:
     try:
@@ -124,6 +168,19 @@ def power_restart_command(
                     success = bmc.reset(n, graceful=graceful)
                 if success:
                     console.print(f"[green]✓[/green] {hostname} restart signal sent ({mode_str}).")
+                    if wait:
+                        with console.status(
+                            f"[cyan]Waiting for {hostname} to cycle and reach ON...[/cyan]"
+                        ):
+                            time.sleep(3)
+                            if _wait_for_power_state(bmc, n, "ON", timeout_sec=wait_timeout):
+                                console.print(
+                                    f"[bold green]✓ {hostname} reboot complete and confirmed ON.[/bold green]"
+                                )
+                            else:
+                                console.print(
+                                    f"[bold yellow]Timed out waiting for {hostname} to reach ON.[/bold yellow]"
+                                )
                 else:
                     console.print(f"[bold red]Failed to restart {hostname}.[/bold red]")
     except LockError as e:

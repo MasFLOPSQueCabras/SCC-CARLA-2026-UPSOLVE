@@ -364,6 +364,21 @@ def power_on(
         bool,
         typer.Option("--all", "-a", help="Power on all nodes (1, 2, and 3)"),
     ] = False,
+    wait: Annotated[
+        bool,
+        typer.Option(
+            "--wait",
+            "-w",
+            help="Wait until target node(s) reach confirmed ON power state",
+        ),
+    ] = False,
+    wait_timeout: Annotated[
+        int,
+        typer.Option(
+            "--wait-timeout",
+            help="Timeout in seconds when waiting for power state change",
+        ),
+    ] = 60,
     force_lock: Annotated[
         bool,
         typer.Option(
@@ -376,7 +391,12 @@ def power_on(
     """Power on bare-metal cluster node(s) via BMC."""
     settings = get_settings()
     power_on_command(
-        settings, node=node, all_nodes=all_nodes, force_lock=force_lock
+        settings,
+        node=node,
+        all_nodes=all_nodes,
+        wait=wait,
+        wait_timeout=wait_timeout,
+        force_lock=force_lock,
     )
 
 
@@ -398,6 +418,21 @@ def power_off(
             help="Force immediate hardware power off (ForceOff) instead of graceful shutdown",
         ),
     ] = False,
+    wait: Annotated[
+        bool,
+        typer.Option(
+            "--wait",
+            "-w",
+            help="Wait until target node(s) reach confirmed OFF power state",
+        ),
+    ] = False,
+    wait_timeout: Annotated[
+        int,
+        typer.Option(
+            "--wait-timeout",
+            help="Timeout in seconds when waiting for power state change",
+        ),
+    ] = 60,
     force_lock: Annotated[
         bool,
         typer.Option(
@@ -413,6 +448,8 @@ def power_off(
         node=node,
         all_nodes=all_nodes,
         graceful=not force,
+        wait=wait,
+        wait_timeout=wait_timeout,
         force_lock=force_lock,
     )
 
@@ -435,6 +472,21 @@ def power_restart(
             help="Force immediate hard reboot (ForceRestart) instead of graceful restart",
         ),
     ] = False,
+    wait: Annotated[
+        bool,
+        typer.Option(
+            "--wait",
+            "-w",
+            help="Wait until target node(s) complete reboot and reach confirmed ON power state",
+        ),
+    ] = False,
+    wait_timeout: Annotated[
+        int,
+        typer.Option(
+            "--wait-timeout",
+            help="Timeout in seconds when waiting for power state change",
+        ),
+    ] = 60,
     force_lock: Annotated[
         bool,
         typer.Option(
@@ -450,6 +502,8 @@ def power_restart(
         node=node,
         all_nodes=all_nodes,
         graceful=not force,
+        wait=wait,
+        wait_timeout=wait_timeout,
         force_lock=force_lock,
     )
 
