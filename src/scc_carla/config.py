@@ -1,7 +1,5 @@
 from functools import lru_cache
-from pathlib import Path
 
-from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -30,7 +28,7 @@ class ClusterSettings(BaseSettings):
         "https://download.rockylinux.org/pub/rocky/10/isos/x86_64/Rocky-10.2-x86_64-minimal.iso"
     )
 
-    db_path: Path = Field(default_factory=lambda: Path.cwd() / "scc_state.db")
+    bastion_state_db_path: str = "~/.config/scc_carla/scc_state.db"
     node_username: str = "scct-2672"
 
     def get_node_ip(self, node_id: int) -> str:

@@ -1,11 +1,23 @@
-from collections.abc import Generator
-from contextlib import contextmanager
+import getpass
+import json
+import logging
+import os
+import socket
+import subprocess
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
+from typing import Any, Self
 
 import turso
+
+from scc_carla.config import ClusterSettings
+from scc_carla.http_server import is_running_on_bastion
+from scc_carla.state_worker import execute_action, get_file_hash
+
+logger = logging.getLogger(__name__)
+
+_WORKER_SYNCED = False
 
 
 class NodeLifecycle(StrEnum):
@@ -28,122 +40,358 @@ class NodeState:
     last_updated: str | None = None
 
 
-@contextmanager
-def get_db(db_path: Path) -> Generator[turso.Connection]:
-    conn = turso.connect(str(db_path))
-    try:
-        yield conn
-        conn.commit()
-    finally:
-        conn.close()
+@dataclass(frozen=True)
+class LockInfo:
+    resource: str
+    holder: str
+    operation: str
+    acquired_at: str
+    timeout_sec: int
+    elapsed_sec: int
+    is_expired: bool
 
 
-def init_db(db_path: Path, team_id: int) -> None:
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    now = datetime.now(UTC).isoformat()
-    with get_db(db_path) as conn:
-        cur = conn.cursor()
-        cur.execute(
-            """
-            CREATE TABLE IF NOT EXISTS nodes (
-                node_id INTEGER PRIMARY KEY,
-                hostname TEXT NOT NULL,
-                os_ip TEXT NOT NULL,
-                bmc_ip TEXT NOT NULL,
-                state TEXT NOT NULL,
-                pubkey TEXT,
-                bios_profile TEXT,
-                last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-            """
-        )
-        cur.executemany(
-            """
-            INSERT OR IGNORE INTO nodes (node_id, hostname, os_ip, bmc_ip, state, bios_profile, last_updated)
-            VALUES (?, ?, ?, ?, ?, 'factory_baseline', ?)
-            """,
-            [
-                (
-                    node_id,
-                    f"node{node_id}",
-                    f"10.2.{team_id}.{node_id}",
-                    f"10.1.{team_id}.{node_id}",
-                    NodeLifecycle.UNPROVISIONED.value,
-                    now,
-                )
-                for node_id in (1, 2, 3)
-            ],
-        )
+class LockError(Exception):
+    """Raised when an operational lock cannot be acquired due to a conflict."""
 
 
-def ensure_db(db_path: Path, team_id: int) -> None:
-    if not db_path.exists():
-        init_db(db_path, team_id)
-
-
-def get_all_nodes(db_path: Path, team_id: int) -> list[NodeState]:
-    ensure_db(db_path, team_id)
-    with get_db(db_path) as conn:
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT node_id, hostname, os_ip, bmc_ip, state, pubkey, bios_profile, last_updated FROM nodes ORDER BY node_id"
-        )
-        return [
-            NodeState(
-                node_id=r[0],
-                hostname=r[1],
-                os_ip=r[2],
-                bmc_ip=r[3],
-                state=(
-                    NodeLifecycle(r[4])
-                    if r[4] in NodeLifecycle._value2member_map_
-                    else NodeLifecycle.UNPROVISIONED
-                ),
-                pubkey=r[5],
-                bios_profile=r[6],
-                last_updated=r[7],
-            )
-            for r in cur.fetchall()
-        ]
-
-
-def reset_cluster_state(db_path: Path) -> None:
-    if not db_path.exists():
+def _ensure_worker_synced(settings: ClusterSettings) -> None:
+    """Verifies that the bastion state_worker.py is present and matches the local SHA-256 hash."""
+    global _WORKER_SYNCED
+    if _WORKER_SYNCED:
         return
-    with get_db(db_path) as conn:
-        cur = conn.cursor()
-        now = datetime.now(UTC).isoformat()
-        cur.execute(
-            "UPDATE nodes SET state = ?, pubkey = NULL, bios_profile = 'factory_baseline', last_updated = ?",
-            (NodeLifecycle.UNPROVISIONED.value, now),
+
+    local_worker_path = Path(__file__).with_name("state_worker.py")
+    local_hash = get_file_hash(local_worker_path)
+
+    remote_dir = "~/.config/scc_carla"
+    remote_hash_file = f"{remote_dir}/state_worker.hash"
+    remote_worker_file = f"{remote_dir}/state_worker.py"
+
+    check_cmd = [
+        "ssh",
+        "-o",
+        "ControlMaster=auto",
+        "-o",
+        "ControlPath=/tmp/scc-carla-ssh-%r@%h:%p",
+        "-o",
+        "ControlPersist=60s",
+        settings.bastion_ssh_host,
+        f"cat {remote_hash_file} 2>/dev/null || true",
+    ]
+    res = subprocess.run(check_cmd, capture_output=True, text=True, check=False)
+    remote_hash = res.stdout.strip()
+
+    if remote_hash == local_hash:
+        _WORKER_SYNCED = True
+        return
+
+    logger.info("Syncing state_worker.py to bastion (hash: %s)...", local_hash[:8])
+    mkdir_cmd = [
+        "ssh",
+        "-o",
+        "ControlMaster=auto",
+        "-o",
+        "ControlPath=/tmp/scc-carla-ssh-%r@%h:%p",
+        "-o",
+        "ControlPersist=60s",
+        settings.bastion_ssh_host,
+        f"mkdir -p {remote_dir}",
+    ]
+    subprocess.run(mkdir_cmd, check=True, capture_output=True)
+
+    scp_cmd = [
+        "scp",
+        "-o",
+        "ControlMaster=auto",
+        "-o",
+        "ControlPath=/tmp/scc-carla-ssh-%r@%h:%p",
+        "-o",
+        "ControlPersist=60s",
+        "-q",
+        str(local_worker_path),
+        f"{settings.bastion_ssh_host}:{remote_worker_file}",
+    ]
+    subprocess.run(scp_cmd, check=True)
+
+    write_hash_cmd = [
+        "ssh",
+        "-o",
+        "ControlMaster=auto",
+        "-o",
+        "ControlPath=/tmp/scc-carla-ssh-%r@%h:%p",
+        "-o",
+        "ControlPersist=60s",
+        settings.bastion_ssh_host,
+        f"echo '{local_hash}' > {remote_hash_file}",
+    ]
+    subprocess.run(write_hash_cmd, check=True, capture_output=True)
+    _WORKER_SYNCED = True
+
+
+def _run_bastion_ssh_action(
+    settings: ClusterSettings, action: str, args: dict[str, Any]
+) -> Any:
+    """Executes a database action on the bastion host via SSH using state_worker.py."""
+    _ensure_worker_synced(settings)
+
+    payload = json.dumps({
+        "db_path": settings.bastion_state_db_path,
+        "action": action,
+        "args": args,
+    })
+    cmd = [
+        "ssh",
+        "-o",
+        "ControlMaster=auto",
+        "-o",
+        "ControlPath=/tmp/scc-carla-ssh-%r@%h:%p",
+        "-o",
+        "ControlPersist=60s",
+        settings.bastion_ssh_host,
+        "python3 ~/.config/scc_carla/state_worker.py",
+    ]
+    res = subprocess.run(
+        cmd,
+        input=payload,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if res.returncode != 0:
+        err_msg = (
+            res.stderr.strip() or f"SSH process exited with code {res.returncode}"
         )
+        raise RuntimeError(
+            f"Failed to execute Turso DB action on bastion: {err_msg}"
+        )
+    try:
+        data = json.loads(res.stdout)
+    except json.JSONDecodeError as e:
+        raise RuntimeError(
+            f"Invalid JSON response from bastion DB worker: {res.stdout}"
+        ) from e
+
+    if data.get("status") != "ok":
+        raise RuntimeError(
+            f"Bastion DB error: {data.get('error', 'unknown error')}"
+        )
+    return data.get("result")
+
+
+def _dispatch_db_action(
+    settings: ClusterSettings, action: str, args: dict[str, Any]
+) -> Any:
+    """Dispatches database action to bastion Turso instance directly or over SSH."""
+    if is_running_on_bastion(settings.bastion_hostname):
+        db_path = os.path.expanduser(settings.bastion_state_db_path)
+        os.makedirs(os.path.dirname(db_path), exist_ok=True)
+        conn = turso.connect(db_path)
+        try:
+            return execute_action(conn, action, args)
+        finally:
+            conn.close()
+
+    return _run_bastion_ssh_action(settings, action, args)
+
+
+def init_db(settings: ClusterSettings) -> None:
+    _dispatch_db_action(settings, "init_db", {"team_id": settings.team_id})
+
+
+def ensure_db(settings: ClusterSettings) -> None:
+    init_db(settings)
+
+
+def get_all_nodes(settings: ClusterSettings) -> list[NodeState]:
+    raw_nodes = _dispatch_db_action(
+        settings, "get_all_nodes", {"team_id": settings.team_id}
+    )
+    return [
+        NodeState(
+            node_id=r["node_id"],
+            hostname=r["hostname"],
+            os_ip=r["os_ip"],
+            bmc_ip=r["bmc_ip"],
+            state=(
+                NodeLifecycle(r["state"])
+                if r["state"] in NodeLifecycle._value2member_map_
+                else NodeLifecycle.UNPROVISIONED
+            ),
+            pubkey=r["pubkey"],
+            bios_profile=r["bios_profile"],
+            last_updated=r["last_updated"],
+        )
+        for r in raw_nodes
+    ]
 
 
 def update_node_state(
-    db_path: Path,
+    settings: ClusterSettings,
     node_id: int,
     state: NodeLifecycle | None = None,
     pubkey: str | None = None,
     bios_profile: str | None = None,
 ) -> None:
-    with get_db(db_path) as conn:
-        cur = conn.cursor()
-        now = datetime.now(UTC).isoformat()
-        fields = ["last_updated = ?"]
-        params: list[object] = [now]
+    args: dict[str, Any] = {"node_id": node_id}
+    if state is not None:
+        args["state"] = state.value
+    if pubkey is not None:
+        args["pubkey"] = pubkey
+    if bios_profile is not None:
+        args["bios_profile"] = bios_profile
+    _dispatch_db_action(settings, "update_node_state", args)
 
-        if state is not None:
-            fields.append("state = ?")
-            params.append(state.value)
 
-        if pubkey is not None:
-            fields.append("pubkey = ?")
-            params.append(pubkey)
+def reset_cluster_state(settings: ClusterSettings) -> None:
+    _dispatch_db_action(settings, "reset_cluster_state", {})
 
-        if bios_profile is not None:
-            fields.append("bios_profile = ?")
-            params.append(bios_profile)
 
-        params.append(node_id)
-        query = f"UPDATE nodes SET {', '.join(fields)} WHERE node_id = ?"
-        cur.execute(query, tuple(params))
+def acquire_locks(
+    settings: ClusterSettings,
+    resources: list[str],
+    holder: str,
+    operation: str,
+    timeout_sec: int = 1800,
+    force: bool = False,
+) -> tuple[bool, str | None]:
+    result = _dispatch_db_action(
+        settings,
+        "acquire_locks",
+        {
+            "resources": resources,
+            "holder": holder,
+            "operation": operation,
+            "timeout_sec": timeout_sec,
+            "force": force,
+        },
+    )
+    return bool(result.get("acquired")), result.get("conflict")
+
+
+def acquire_lock(
+    settings: ClusterSettings,
+    resource: str,
+    holder: str,
+    operation: str,
+    timeout_sec: int = 1800,
+    force: bool = False,
+) -> tuple[bool, str | None]:
+    return acquire_locks(
+        settings,
+        [resource],
+        holder=holder,
+        operation=operation,
+        timeout_sec=timeout_sec,
+        force=force,
+    )
+
+
+def release_locks(
+    settings: ClusterSettings,
+    resources: list[str],
+    holder: str | None = None,
+    force: bool = False,
+) -> bool:
+    return bool(
+        _dispatch_db_action(
+            settings,
+            "release_locks",
+            {
+                "resources": resources,
+                "holder": holder,
+                "force": force,
+            },
+        )
+    )
+
+
+def release_lock(
+    settings: ClusterSettings,
+    resource: str,
+    holder: str | None = None,
+    force: bool = False,
+) -> bool:
+    return release_locks(settings, [resource], holder=holder, force=force)
+
+
+def get_active_locks(settings: ClusterSettings) -> list[LockInfo]:
+    raw_locks = _dispatch_db_action(settings, "get_active_locks", {})
+    return [
+        LockInfo(
+            resource=r["resource"],
+            holder=r["holder"],
+            operation=r["operation"],
+            acquired_at=r["acquired_at"],
+            timeout_sec=r["timeout_sec"],
+            elapsed_sec=r["elapsed_sec"],
+            is_expired=r["is_expired"],
+        )
+        for r in raw_locks
+    ]
+
+
+def break_lock(settings: ClusterSettings, resource: str) -> bool:
+    return bool(
+        _dispatch_db_action(settings, "break_lock", {"resource": resource})
+    )
+
+
+class ClusterLock:
+    """Context manager for distributed operational locking on shared Turso database.
+
+    Acquires resource locks on entrance, rolling back and raising LockError on conflict,
+    and reliably releases held locks on exit.
+    """
+
+    def __init__(
+        self,
+        settings: ClusterSettings,
+        resources: list[str],
+        operation: str,
+        timeout_sec: int = 1800,
+        force: bool = False,
+        holder: str | None = None,
+    ) -> None:
+        self.settings = settings
+        self.resources = resources
+        self.operation = operation
+        self.timeout_sec = timeout_sec
+        self.force = force
+        self.holder = holder or f"{getpass.getuser()}@{socket.gethostname()}"
+        self._acquired: list[str] = []
+
+    def __enter__(self) -> Self:
+        if not self.resources:
+            return self
+        success, conflict_msg = acquire_locks(
+            self.settings,
+            self.resources,
+            self.holder,
+            self.operation,
+            timeout_sec=self.timeout_sec,
+            force=self.force,
+        )
+        if not success:
+            raise LockError(
+                conflict_msg
+                or f"Failed to acquire lock for resources: {self.resources}"
+            )
+        self._acquired = list(self.resources)
+        return self
+
+    def __exit__(
+        self, exc_type: object, exc_val: object, exc_tb: object
+    ) -> None:
+        if self._acquired:
+            try:
+                release_locks(
+                    self.settings,
+                    self._acquired,
+                    holder=self.holder,
+                    force=self.force,
+                )
+            except (RuntimeError, OSError, subprocess.SubprocessError) as e:
+                logger.warning("Failed to release operational locks: %s", e)
+            finally:
+                self._acquired = []

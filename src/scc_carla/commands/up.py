@@ -9,7 +9,13 @@ from rich.console import Console
 from scc_carla.bios import BiosProfile, get_profile_attributes
 from scc_carla.bmc import BMCController
 from scc_carla.config import ClusterSettings
-from scc_carla.db import NodeLifecycle, ensure_db, update_node_state
+from scc_carla.db import (
+    ClusterLock,
+    LockError,
+    NodeLifecycle,
+    ensure_db,
+    update_node_state,
+)
 from scc_carla.http_server import EphemeralRangeHTTPServer, is_running_on_bastion
 from scc_carla.nodes import resolve_target_nodes
 from scc_carla.ssh import is_ssh_authenticated
@@ -159,7 +165,7 @@ def _provision_single_node(
         f"[cyan]Provisioning {hostname} ({node_ip}) with BIOS profile '{bios_profile.value}'...[/cyan]"
     )
     update_node_state(
-        settings.db_path,
+        settings,
         node,
         NodeLifecycle.INSTALLING,
         pubkey=pubkey,
@@ -222,7 +228,7 @@ def _provision_single_node(
     console.print(f"[cyan]Mounting Virtual Media on {hostname} via iLO...[/cyan]")
     if not bmc.mount_and_boot(node, iso_url=iso_url, floppy_url=oemdrv_url):
         console.print(f"[bold red]Failed to mount and boot {hostname}.[/bold red]")
-        update_node_state(settings.db_path, node, NodeLifecycle.OFFLINE)
+        update_node_state(settings, node, NodeLifecycle.OFFLINE)
         return False
 
     console.print(
@@ -270,7 +276,7 @@ def _provision_single_node(
         console.print(
             f"[bold red]Timed out waiting for {hostname} installation and authenticated SSH.[/bold red]"
         )
-        update_node_state(settings.db_path, node, NodeLifecycle.OFFLINE)
+        update_node_state(settings, node, NodeLifecycle.OFFLINE)
         return False
 
     elapsed_total = int(time.time() - start_time)
@@ -281,7 +287,7 @@ def _provision_single_node(
     bmc.eject_virtual_media(node)
     console.print(f"[green]✓[/green] Ejected Virtual Media on {hostname}.")
     update_node_state(
-        settings.db_path,
+        settings,
         node,
         NodeLifecycle.BOOTSTRAPPED,
         pubkey=pubkey,
@@ -301,8 +307,9 @@ def up_command(
     poll_timeout: int = 1800,
     bios_profile: BiosProfile = BiosProfile.HPC,
     no_timeout: bool = False,
+    force: bool = False,
 ) -> None:
-    ensure_db(settings.db_path, settings.team_id)
+    ensure_db(settings)
 
     try:
         target_nodes = resolve_target_nodes(node, all_nodes)
@@ -338,34 +345,45 @@ def up_command(
     local_staging_dir.mkdir(parents=True, exist_ok=True)
     template_engine = TemplateEngine()
 
-    with (
-        BMCController(settings) as bmc,
-        EphemeralRangeHTTPServer(
-            port=settings.bastion_http_port,
-            bind_ip=settings.bastion_http_ip,
-            bastion_ssh_host=settings.bastion_ssh_host,
-            bastion_hostname=settings.bastion_hostname,
-            remote_serve_dir="~/scc_serve",
-        ),
-    ):
-        _ensure_bastion_iso(settings, remote_serve_dir="~/scc_serve")
-
-        for n in target_nodes:
-            success = _provision_single_node(
-                settings=settings,
-                node=n,
-                pubkey=pubkey,
-                template_engine=template_engine,
-                local_staging_dir=local_staging_dir,
-                bmc=bmc,
-                poll_timeout=poll_timeout,
-                bios_profile=bios_profile,
-                privkey_path=privkey_file,
+    resources = [f"node-{n}" for n in target_nodes]
+    try:
+        with (
+            ClusterLock(
+                settings, resources=resources, operation="up", force=force
+            ),
+            BMCController(settings) as bmc,
+            EphemeralRangeHTTPServer(
+                port=settings.bastion_http_port,
+                bind_ip=settings.bastion_http_ip,
+                bastion_ssh_host=settings.bastion_ssh_host,
+                bastion_hostname=settings.bastion_hostname,
                 remote_serve_dir="~/scc_serve",
-                no_timeout=no_timeout,
-            )
-            if not success and len(target_nodes) > 1:
-                console.print(
-                    f"[bold red]Stopping batch provisioning due to failure on Node {n}.[/bold red]"
+            ),
+        ):
+            _ensure_bastion_iso(settings, remote_serve_dir="~/scc_serve")
+
+            for n in target_nodes:
+                success = _provision_single_node(
+                    settings=settings,
+                    node=n,
+                    pubkey=pubkey,
+                    template_engine=template_engine,
+                    local_staging_dir=local_staging_dir,
+                    bmc=bmc,
+                    poll_timeout=poll_timeout,
+                    bios_profile=bios_profile,
+                    privkey_path=privkey_file,
+                    remote_serve_dir="~/scc_serve",
+                    no_timeout=no_timeout,
                 )
-                break
+                if not success and len(target_nodes) > 1:
+                    console.print(
+                        f"[bold red]Stopping batch provisioning due to failure on Node {n}.[/bold red]"
+                    )
+                    break
+    except LockError as e:
+        console.print(f"[bold red]Lock conflict: {e}[/bold red]")
+        console.print(
+            "[dim]Tip: Use --force to override or 'scc-carla lock list' to view active locks.[/dim]"
+        )
+        return

@@ -6,7 +6,12 @@ from rich.table import Table
 
 from scc_carla.bmc import BMCController
 from scc_carla.config import ClusterSettings
-from scc_carla.db import NodeLifecycle, get_all_nodes, update_node_state
+from scc_carla.db import (
+    NodeLifecycle,
+    get_active_locks,
+    get_all_nodes,
+    update_node_state,
+)
 from scc_carla.ssh import is_ssh_authenticated
 
 console = Console()
@@ -38,7 +43,7 @@ def _probe_node(
 
 
 def status_command(settings: ClusterSettings, probe: bool = True) -> None:
-    nodes = get_all_nodes(settings.db_path, settings.team_id)
+    nodes = get_all_nodes(settings)
     default_key = Path.home() / ".ssh" / "carla_scc_ed25519"
     key_path = default_key if default_key.exists() else None
 
@@ -75,10 +80,10 @@ def status_command(settings: ClusterSettings, probe: bool = True) -> None:
                     new_state = NodeLifecycle.OFFLINE
 
                 if new_state is not None:
-                    update_node_state(settings.db_path, node.node_id, new_state)
+                    update_node_state(settings, node.node_id, new_state)
 
         # Refresh nodes after reconciliation
-        nodes = get_all_nodes(settings.db_path, settings.team_id)
+        nodes = get_all_nodes(settings)
 
     table = Table(
         title="SCC@CARLA Cluster Nodes",
@@ -149,13 +154,50 @@ def status_command(settings: ClusterSettings, probe: bool = True) -> None:
 
     console.print()
     console.print(table)
+
+    # Active operational locks
+    locks = get_active_locks(settings)
+    if locks:
+        lock_table = Table(
+            title="Active Operational Locks",
+            show_header=True,
+            header_style="bold yellow",
+        )
+        lock_table.add_column("Resource", justify="center", style="bold")
+        lock_table.add_column("Holder", justify="center")
+        lock_table.add_column("Operation", justify="center")
+        lock_table.add_column("Acquired At", justify="center")
+        lock_table.add_column("Elapsed", justify="center")
+        lock_table.add_column("Status", justify="center")
+
+        for lk in locks:
+            elapsed_m = lk.elapsed_sec // 60
+            elapsed_s = lk.elapsed_sec % 60
+            elapsed_str = f"{elapsed_m}m {elapsed_s}s"
+            status_str = (
+                "[bold red]EXPIRED[/bold red]"
+                if lk.is_expired
+                else "[bold yellow]LOCKED[/bold yellow]"
+            )
+            lock_table.add_row(
+                lk.resource,
+                lk.holder,
+                lk.operation,
+                lk.acquired_at,
+                elapsed_str,
+                status_str,
+            )
+
+        console.print()
+        console.print(lock_table)
+
     console.print(
         Panel(
             f"[bold]Cluster Configuration[/bold]\n"
             f"• Team ID: {settings.team_id}\n"
             f"• Gateway: {settings.gateway_ip}\n"
             f"• Bastion HTTP: {settings.bastion_http_ip}:{settings.bastion_http_port}\n"
-            f"• State Database: {settings.db_path}",
+            f"• Shared Bastion DB: {settings.bastion_ssh_host}:{settings.bastion_state_db_path}",
             title="Cluster Info",
             border_style="dim",
         )

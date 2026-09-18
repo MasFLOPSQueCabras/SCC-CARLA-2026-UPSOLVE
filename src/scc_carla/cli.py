@@ -2,6 +2,8 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
+from rich.console import Console
+from rich.table import Table
 
 from scc_carla.bios import BiosProfile
 from scc_carla.commands.bios import (
@@ -14,6 +16,9 @@ from scc_carla.commands.ssh import ssh_command
 from scc_carla.commands.status import status_command
 from scc_carla.commands.up import up_command
 from scc_carla.config import get_settings
+from scc_carla.db import break_lock, get_active_locks
+
+console = Console()
 
 app = typer.Typer(
     name="scc",
@@ -27,6 +32,13 @@ bios_app = typer.Typer(
     no_args_is_help=True,
 )
 app.add_typer(bios_app, name="bios")
+
+lock_app = typer.Typer(
+    name="lock",
+    help="Inspect and manage cluster operational locks",
+    no_args_is_help=True,
+)
+app.add_typer(lock_app, name="lock")
 
 
 @app.command("up")
@@ -65,6 +77,14 @@ def up(
             help="Disable polling timeout and wait indefinitely until installation completes",
         ),
     ] = False,
+    force: Annotated[
+        bool,
+        typer.Option(
+            "--force",
+            "-f",
+            help="Override and break any conflicting operational locks",
+        ),
+    ] = False,
 ) -> None:
     settings = get_settings()
     up_command(
@@ -75,6 +95,7 @@ def up(
         poll_timeout=poll_timeout,
         bios_profile=bios_profile,
         no_timeout=no_timeout,
+        force=force,
     )
 
 
@@ -92,9 +113,23 @@ def down(
         bool,
         typer.Option("--reset-db", "-r", help="Reset node states in database"),
     ] = False,
+    force: Annotated[
+        bool,
+        typer.Option(
+            "--force",
+            "-f",
+            help="Override and break any conflicting operational locks",
+        ),
+    ] = False,
 ) -> None:
     settings = get_settings()
-    down_command(settings, node=node, all_nodes=all_nodes, reset_db=reset_db)
+    down_command(
+        settings,
+        node=node,
+        all_nodes=all_nodes,
+        reset_db=reset_db,
+        force=force,
+    )
 
 
 @app.command("status")
@@ -228,9 +263,82 @@ def bios_apply(
             help="BIOS profile to apply (hpc, baseline, low_latency)",
         ),
     ] = BiosProfile.HPC,
+    force: Annotated[
+        bool,
+        typer.Option(
+            "--force",
+            "-f",
+            help="Override and break any conflicting operational locks",
+        ),
+    ] = False,
 ) -> None:
     settings = get_settings()
-    bios_apply_command(settings, node=node, all_nodes=all_nodes, profile=profile)
+    bios_apply_command(
+        settings,
+        node=node,
+        all_nodes=all_nodes,
+        profile=profile,
+        force=force,
+    )
+
+
+@lock_app.command("list")
+def lock_list() -> None:
+    """List all active and expired operational locks on the shared bastion database."""
+    settings = get_settings()
+    locks = get_active_locks(settings)
+    if not locks:
+        console.print("[dim]No operational locks are currently held.[/dim]")
+        return
+
+    table = Table(
+        title="Shared Operational Locks",
+        show_header=True,
+        header_style="bold yellow",
+    )
+    table.add_column("Resource", justify="center", style="bold")
+    table.add_column("Holder", justify="center")
+    table.add_column("Operation", justify="center")
+    table.add_column("Acquired At", justify="center")
+    table.add_column("Elapsed", justify="center")
+    table.add_column("Timeout", justify="center")
+    table.add_column("Status", justify="center")
+
+    for lk in locks:
+        elapsed_m = lk.elapsed_sec // 60
+        elapsed_s = lk.elapsed_sec % 60
+        elapsed_str = f"{elapsed_m}m {elapsed_s}s"
+        status_str = (
+            "[bold red]EXPIRED[/bold red]"
+            if lk.is_expired
+            else "[bold yellow]LOCKED[/bold yellow]"
+        )
+        table.add_row(
+            lk.resource,
+            lk.holder,
+            lk.operation,
+            lk.acquired_at,
+            elapsed_str,
+            f"{lk.timeout_sec}s",
+            status_str,
+        )
+
+    console.print(table)
+
+
+@lock_app.command("release")
+def lock_release(
+    resource: Annotated[
+        str,
+        typer.Argument(
+            help="Resource lock to release/break ('node-1', 'node-2', 'node-3', 'cluster', or 'all')"
+        ),
+    ],
+) -> None:
+    """Release or break an operational lock on a resource or all resources."""
+    settings = get_settings()
+    break_lock(settings, resource)
+    console.print(f"[bold green]✓ Released lock on '{resource}'.[/bold green]")
 
 
 def main() -> None:

@@ -7,7 +7,7 @@ from rich.table import Table
 from scc_carla.bios import BiosProfile, get_profile_attributes
 from scc_carla.bmc import BMCController
 from scc_carla.config import ClusterSettings
-from scc_carla.db import update_node_state
+from scc_carla.db import ClusterLock, LockError, update_node_state
 from scc_carla.nodes import resolve_target_nodes
 
 console = Console()
@@ -108,6 +108,7 @@ def bios_apply_command(
     node: int | None = None,
     all_nodes: bool = False,
     profile: BiosProfile = BiosProfile.HPC,
+    force: bool = False,
 ) -> None:
     try:
         target_nodes = resolve_target_nodes(node, all_nodes)
@@ -119,23 +120,39 @@ def bios_apply_command(
         console.print("[bold yellow]No nodes specified. Use -n or -a.[/bold yellow]")
         return
 
+    resources = [f"node-{n}" for n in target_nodes]
     attrs: dict[str, Any] = get_profile_attributes(profile)
 
-    with BMCController(settings) as bmc:
-        for n in target_nodes:
-            hostname = settings.get_hostname(n)
-            with console.status(
-                f"[cyan]Staging '{profile.value}' BIOS profile on {hostname}...[/cyan]"
-            ):
-                success = bmc.set_bios_settings(n, attrs)
+    try:
+        with (
+            ClusterLock(
+                settings,
+                resources=resources,
+                operation=f"bios-apply-{profile.value}",
+                force=force,
+            ),
+            BMCController(settings) as bmc,
+        ):
+            for n in target_nodes:
+                hostname = settings.get_hostname(n)
+                with console.status(
+                    f"[cyan]Staging '{profile.value}' BIOS profile on {hostname}...[/cyan]"
+                ):
+                    success = bmc.set_bios_settings(n, attrs)
 
-            if success:
-                update_node_state(settings.db_path, n, bios_profile=profile.value)
-                console.print(
-                    f"[green]✓[/green] Staged '{profile.value}' profile on {hostname}. "
-                    "[dim](Changes take effect after next reboot)[/dim]"
-                )
-            else:
-                console.print(
-                    f"[bold red]Failed to stage BIOS profile on {hostname}.[/bold red]"
-                )
+                if success:
+                    update_node_state(settings, n, bios_profile=profile.value)
+                    console.print(
+                        f"[green]✓[/green] Staged '{profile.value}' profile on {hostname}. "
+                        "[dim](Changes take effect after next reboot)[/dim]"
+                    )
+                else:
+                    console.print(
+                        f"[bold red]Failed to stage BIOS profile on {hostname}.[/bold red]"
+                    )
+    except LockError as e:
+        console.print(f"[bold red]Lock conflict: {e}[/bold red]")
+        console.print(
+            "[dim]Tip: Use --force to override or 'scc-carla lock list' to view active locks.[/dim]"
+        )
+        return
