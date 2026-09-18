@@ -4,5 +4,5 @@ __pycache__/
 .env
 *.db*
 stage/
-SCC@CARLA infra access.md
-SPECS.md
+/SCC@CARLA infra access.md
+/SPECS.md
