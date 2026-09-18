@@ -1,0 +1,59 @@
+---
+- name: Install InfiniBand diagnostic and benchmark packages
+  ansible.builtin.dnf:
+    name:
+      - rdma-core
+      - infiniband-diags
+      - libibverbs-utils
+      - perftest
+    state: present
+
+- name: Configure RDMA memory locking limits in /etc/security/limits.d/99-rdma.conf
+  ansible.builtin.copy:
+    dest: /etc/security/limits.d/99-rdma.conf
+    content: |
+      * soft memlock unlimited
+      * hard memlock unlimited
+      * soft stack 32768
+      * hard stack 32768
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Check existing NetworkManager connections
+  ansible.builtin.command: nmcli -g NAME con show
+  register: nmcli_con_show
+  changed_when: false
+
+- name: Create NetworkManager connection for ibs5f0 if missing
+  ansible.builtin.command: >
+    nmcli con add type infiniband con-name ibs5f0 ifname ibs5f0 ip4 {{ ib_ip }}/24 autoconnect yes
+  when: "'ibs5f0' not in nmcli_con_show.stdout_lines"
+
+- name: Ensure static IP and autoconnect on ibs5f0
+  ansible.builtin.command: >
+    nmcli con mod ibs5f0 ipv4.addresses {{ ib_ip }}/24 ipv4.method manual autoconnect yes
+  changed_when: false
+
+- name: Check ibs5f0 device connection state
+  ansible.builtin.command: nmcli -g GENERAL.STATE dev show ibs5f0
+  register: ibs5f0_dev_state
+  changed_when: false
+
+- name: Ensure ibs5f0 connection is activated
+  ansible.builtin.command: nmcli con up ibs5f0
+  when: "'100 (connected)' not in ibs5f0_dev_state.stdout"
+
+- name: Assign ibs5f0 to trusted firewalld zone
+  ansible.posix.firewalld:
+    zone: trusted
+    interface: ibs5f0
+    permanent: true
+    state: enabled
+    immediate: true
+
+- name: Verify InfiniBand mlx5_0 port status
+  ansible.builtin.command: ibstat mlx5_0 1
+  register: ibstat_out
+  changed_when: false
+  failed_when: "'State: Active' not in ibstat_out.stdout"

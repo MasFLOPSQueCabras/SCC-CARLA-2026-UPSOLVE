@@ -29,17 +29,14 @@ sshkey --username={{ node_username }} "{{ pubkey }}"
 firewall --enabled --ssh
 selinux --enforcing
 
-# Package selection (Minimal BaseOS)
+# Package selection (Minimal BaseOS with python3 for Ansible)
 %packages --ignoremissing
 @core
 openssh-server
 sudo
+python3
 curl
 tar
-infiniband-diags
-libibverbs-utils
-perftest
-rdma-core
 %end
 
 # Post-installation hardening & sudoers configuration
@@ -53,30 +50,4 @@ sed -i 's/^#*PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config
 sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
 
 systemctl enable sshd
-
-# Ensure InfiniBand diagnostic and benchmark packages are installed
-dnf install -y infiniband-diags libibverbs-utils perftest rdma-core || true
-
-# RDMA unlimited memory locking limits
-cat > /etc/security/limits.d/99-rdma.conf << 'EOF'
-* soft memlock unlimited
-* hard memlock unlimited
-* soft stack 32768
-* hard stack 32768
-EOF
-
-# InfiniBand / IPoIB Network Configuration
-nmcli con mod ibs5f0 ipv4.addresses {{ ib_ip }}/24 ipv4.method manual autoconnect yes || nmcli con add type infiniband con-name ib0 ifname ibs5f0 ip4 {{ ib_ip }}/24 autoconnect yes || true
-firewall-cmd --zone=trusted --change-interface=ibs5f0 --permanent || true
-
-# Cluster /etc/hosts resolution
-cat >> /etc/hosts << 'EOF'
-10.2.72.1 node1
-10.2.72.2 node2
-10.2.72.3 node3
-10.10.72.1 node1-ib
-10.10.72.2 node2-ib
-10.10.72.3 node3-ib
-EOF
-
 %end

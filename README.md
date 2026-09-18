@@ -74,7 +74,27 @@ uv run scc-carla down -a --reset-db
 
 ---
 
-### 4. Power Management (`power`)
+### 4. Cluster Configuration & Ansible (`configure`)
+
+Declarative, idempotent post-provisioning cluster configuration and verification powered by Ansible:
+
+```bash
+# Configure all cluster nodes (hosts, base packages, InfiniBand, RDMA limits)
+uv run scc-carla configure
+
+# Dry-run check mode (preview changes without applying)
+uv run scc-carla configure --check
+
+# Target specific nodes
+uv run scc-carla configure --limit node1,node2
+
+# Run InfiniBand fabric verification playbook
+uv run scc-carla configure -p verify_ib.yaml
+```
+
+---
+
+### 5. Power Management (`power`)
 
 Direct bare-metal power operations via BMC Redfish without re-provisioning:
 

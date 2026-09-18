@@ -11,6 +11,7 @@ from scc_carla.commands.bios import (
     bios_backup_command,
     bios_show_command,
 )
+from scc_carla.commands.configure import configure_command
 from scc_carla.commands.down import down_command
 from scc_carla.commands.power import (
     power_metrics_command,
@@ -158,6 +159,52 @@ def status(
 ) -> None:
     settings = get_settings()
     status_command(settings, probe=probe)
+
+
+@app.command("configure")
+def configure(
+    playbook: Annotated[
+        str,
+        typer.Option(
+            "--playbook",
+            "-p",
+            help="Playbook file name inside ansible/playbooks/ (default: site.yaml)",
+        ),
+    ] = "site.yaml",
+    limit: Annotated[
+        str | None,
+        typer.Option(
+            "--limit",
+            "-l",
+            help="Limit execution to specific hosts/nodes (e.g. node1, node2)",
+        ),
+    ] = None,
+    check: Annotated[
+        bool,
+        typer.Option(
+            "--check",
+            "-c",
+            help="Run in dry-run check mode without applying changes",
+        ),
+    ] = False,
+    tags: Annotated[
+        str | None,
+        typer.Option(
+            "--tags",
+            "-t",
+            help="Only execute tasks matching specified tags",
+        ),
+    ] = None,
+) -> None:
+    """Configure cluster nodes idempotently via Ansible."""
+    settings = get_settings()
+    configure_command(
+        settings,
+        playbook=playbook,
+        limit=limit,
+        check=check,
+        tags=tags,
+    )
 
 
 @app.command("ssh")
