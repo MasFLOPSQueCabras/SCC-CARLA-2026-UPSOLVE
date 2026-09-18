@@ -223,14 +223,28 @@ class BMCController:
             logger.debug("Failed to get power status for Node %s: %s", node_id, err)
         return "UNKNOWN"
 
-    def power_off(self, node_id: int) -> bool:
+    def power_off(self, node_id: int, graceful: bool = False) -> bool:
+        reset_type = "GracefulShutdown" if graceful else "ForceOff"
         try:
             with self.get_client(node_id) as client:
                 resp = client.post(
                     "/redfish/v1/Systems/1/Actions/ComputerSystem.Reset/",
-                    {"ResetType": "ForceOff"},
+                    {"ResetType": reset_type},
                 )
-                return resp.status_code in (200, 204)
+                if resp.status_code in (200, 204):
+                    return True
+                if graceful:
+                    logger.debug(
+                        "GracefulShutdown returned %s on Node %s, falling back to ForceOff",
+                        resp.status_code,
+                        node_id,
+                    )
+                    resp = client.post(
+                        "/redfish/v1/Systems/1/Actions/ComputerSystem.Reset/",
+                        {"ResetType": "ForceOff"},
+                    )
+                    return resp.status_code in (200, 204)
+                return False
         except (httpx2.HTTPError, OSError) as err:
             logger.debug("Failed to power off Node %s: %s", node_id, err)
             return False
@@ -247,14 +261,23 @@ class BMCController:
             logger.debug("Failed to power on Node %s: %s", node_id, err)
             return False
 
-    def reset(self, node_id: int, reset_type: str = "ForceRestart") -> bool:
+    def reset(self, node_id: int, graceful: bool = False) -> bool:
+        reset_type = "GracefulRestart" if graceful else "ForceRestart"
         try:
             with self.get_client(node_id) as client:
                 resp = client.post(
                     "/redfish/v1/Systems/1/Actions/ComputerSystem.Reset/",
                     {"ResetType": reset_type},
                 )
-                return resp.status_code in (200, 204)
+                if resp.status_code in (200, 204):
+                    return True
+                if graceful:
+                    resp = client.post(
+                        "/redfish/v1/Systems/1/Actions/ComputerSystem.Reset/",
+                        {"ResetType": "ForceRestart"},
+                    )
+                    return resp.status_code in (200, 204)
+                return False
         except (httpx2.HTTPError, OSError) as err:
             logger.debug("Failed to reset Node %s: %s", node_id, err)
             return False

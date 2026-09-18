@@ -12,6 +12,12 @@ from scc_carla.commands.bios import (
     bios_show_command,
 )
 from scc_carla.commands.down import down_command
+from scc_carla.commands.power import (
+    power_off_command,
+    power_on_command,
+    power_restart_command,
+    power_status_command,
+)
 from scc_carla.commands.ssh import ssh_command
 from scc_carla.commands.status import status_command
 from scc_carla.commands.up import up_command
@@ -32,6 +38,13 @@ bios_app = typer.Typer(
     no_args_is_help=True,
 )
 app.add_typer(bios_app, name="bios")
+
+power_app = typer.Typer(
+    name="power",
+    help="Inspect and control bare-metal node power states",
+    no_args_is_help=True,
+)
+app.add_typer(power_app, name="power")
 
 lock_app = typer.Typer(
     name="lock",
@@ -339,6 +352,122 @@ def lock_release(
     settings = get_settings()
     break_lock(settings, resource)
     console.print(f"[bold green]✓ Released lock on '{resource}'.[/bold green]")
+
+
+@power_app.command("on")
+def power_on(
+    node: Annotated[
+        int | None,
+        typer.Option("--node", "-n", help="Node ID to power on (1, 2, or 3)"),
+    ] = None,
+    all_nodes: Annotated[
+        bool,
+        typer.Option("--all", "-a", help="Power on all nodes (1, 2, and 3)"),
+    ] = False,
+    force_lock: Annotated[
+        bool,
+        typer.Option(
+            "--force",
+            "-f",
+            help="Override and break conflicting operational locks",
+        ),
+    ] = False,
+) -> None:
+    """Power on bare-metal cluster node(s) via BMC."""
+    settings = get_settings()
+    power_on_command(
+        settings, node=node, all_nodes=all_nodes, force_lock=force_lock
+    )
+
+
+@power_app.command("off")
+def power_off(
+    node: Annotated[
+        int | None,
+        typer.Option("--node", "-n", help="Node ID to power off (1, 2, or 3)"),
+    ] = None,
+    all_nodes: Annotated[
+        bool,
+        typer.Option("--all", "-a", help="Power off all nodes (1, 2, and 3)"),
+    ] = False,
+    force: Annotated[
+        bool,
+        typer.Option(
+            "--force",
+            "-f",
+            help="Force immediate hardware power off (ForceOff) instead of graceful shutdown",
+        ),
+    ] = False,
+    force_lock: Annotated[
+        bool,
+        typer.Option(
+            "--force-lock",
+            help="Override and break conflicting operational locks",
+        ),
+    ] = False,
+) -> None:
+    """Power off bare-metal cluster node(s) gracefully or forcefully."""
+    settings = get_settings()
+    power_off_command(
+        settings,
+        node=node,
+        all_nodes=all_nodes,
+        graceful=not force,
+        force_lock=force_lock,
+    )
+
+
+@power_app.command("restart")
+def power_restart(
+    node: Annotated[
+        int | None,
+        typer.Option("--node", "-n", help="Node ID to restart (1, 2, or 3)"),
+    ] = None,
+    all_nodes: Annotated[
+        bool,
+        typer.Option("--all", "-a", help="Restart all nodes (1, 2, and 3)"),
+    ] = False,
+    force: Annotated[
+        bool,
+        typer.Option(
+            "--force",
+            "-f",
+            help="Force immediate hard reboot (ForceRestart) instead of graceful restart",
+        ),
+    ] = False,
+    force_lock: Annotated[
+        bool,
+        typer.Option(
+            "--force-lock",
+            help="Override and break conflicting operational locks",
+        ),
+    ] = False,
+) -> None:
+    """Reboot / restart bare-metal cluster node(s) gracefully or forcefully."""
+    settings = get_settings()
+    power_restart_command(
+        settings,
+        node=node,
+        all_nodes=all_nodes,
+        graceful=not force,
+        force_lock=force_lock,
+    )
+
+
+@power_app.command("status")
+def power_status(
+    node: Annotated[
+        int | None,
+        typer.Option("--node", "-n", help="Node ID to inspect (1, 2, or 3)"),
+    ] = None,
+    all_nodes: Annotated[
+        bool,
+        typer.Option("--all", "-a", help="Inspect all nodes (1, 2, and 3)"),
+    ] = False,
+) -> None:
+    """Inspect current bare-metal BMC power state across cluster nodes."""
+    settings = get_settings()
+    power_status_command(settings, node=node, all_nodes=all_nodes)
 
 
 def main() -> None:

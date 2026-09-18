@@ -74,7 +74,35 @@ uv run scc-carla down -a --reset-db
 
 ---
 
-### 4. SSH Access (`ssh`)
+### 4. Power Management (`power`)
+
+Direct bare-metal power operations via BMC Redfish without re-provisioning:
+
+```bash
+# Inspect current hardware power state (all nodes)
+uv run scc-carla power status
+
+# Inspect a specific node
+uv run scc-carla power status -n 1
+
+# Power on node(s) to boot existing installed OS
+uv run scc-carla power on -n 1
+uv run scc-carla power on -a
+
+# Power off node(s) gracefully (OS shutdown)
+uv run scc-carla power off -n 1
+
+# Force immediate hardware power off
+uv run scc-carla power off -n 1 --force
+
+# Reboot / restart node(s) gracefully or forcefully
+uv run scc-carla power restart -n 1
+uv run scc-carla power restart -n 1 --force
+```
+
+---
+
+### 5. SSH Access (`ssh`)
 
 Direct transparent jump through the bastion host to cluster nodes:
 
@@ -94,7 +122,7 @@ uv run scc-carla ssh 1 "uname -a"
 
 ---
 
-### 5. BIOS Management (`bios`)
+### 6. BIOS Management (`bios`)
 
 Inspect, backup, and stage BIOS workload profiles via Redfish:
 
@@ -112,7 +140,7 @@ uv run scc-carla bios apply -a -p low_latency
 
 ---
 
-### 6. Operational Locks (`lock`)
+### 7. Operational Locks (`lock`)
 
 Distributed locking prevents teammates from running conflicting operations on shared hardware:
 
