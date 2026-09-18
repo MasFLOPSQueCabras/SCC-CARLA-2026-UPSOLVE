@@ -13,6 +13,7 @@ from scc_carla.commands.bios import (
 )
 from scc_carla.commands.down import down_command
 from scc_carla.commands.power import (
+    power_metrics_command,
     power_off_command,
     power_on_command,
     power_restart_command,
@@ -522,6 +523,44 @@ def power_status(
     """Inspect current bare-metal BMC power state across cluster nodes."""
     settings = get_settings()
     power_status_command(settings, node=node, all_nodes=all_nodes)
+
+
+@power_app.command("metrics")
+def power_metrics(
+    node: Annotated[
+        int | None,
+        typer.Option("--node", "-n", help="Node ID to inspect (1, 2, or 3)"),
+    ] = None,
+    all_nodes: Annotated[
+        bool,
+        typer.Option("--all", "-a", help="Inspect all nodes (1, 2, and 3)"),
+    ] = False,
+    watch: Annotated[
+        bool,
+        typer.Option(
+            "--watch",
+            "-w",
+            help="Stream continuous live power telemetry updates until interrupted",
+        ),
+    ] = False,
+    interval: Annotated[
+        float,
+        typer.Option(
+            "--interval",
+            "-i",
+            help="Refresh interval in seconds when streaming with --watch",
+        ),
+    ] = 2.0,
+) -> None:
+    """Inspect live power draw (Watts, 20-min average, peak) via BMC Redfish."""
+    settings = get_settings()
+    power_metrics_command(
+        settings,
+        node=node,
+        all_nodes=all_nodes,
+        watch=watch,
+        interval=interval,
+    )
 
 
 def main() -> None:

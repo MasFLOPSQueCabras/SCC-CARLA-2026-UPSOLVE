@@ -98,6 +98,14 @@ uv run scc-carla power off -n 1 --force -w
 # Reboot / restart node(s) and wait until confirmed ON
 uv run scc-carla power restart -n 1 --wait
 uv run scc-carla power restart -n 1 --force -w
+
+# Live power draw telemetry (Current Watts, 20-min avg, Min, Peak, and Cluster Total)
+uv run scc-carla power metrics
+uv run scc-carla power metrics -n 1
+
+# Stream continuous live power metrics updates
+uv run scc-carla power metrics --watch
+uv run scc-carla power metrics -w -i 1.0
 ```
 
 ---
