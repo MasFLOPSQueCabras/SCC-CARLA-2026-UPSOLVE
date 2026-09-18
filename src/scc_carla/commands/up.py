@@ -173,7 +173,10 @@ def _provision_single_node(
     )
 
     context = {
+        "node_id": node,
+        "team_id": settings.team_id,
         "node_ip": node_ip,
+        "ib_ip": f"10.10.{settings.team_id}.{node}",
         "gateway_ip": settings.gateway_ip,
         "dns_ip": settings.dns_ip,
         "hostname": hostname,
