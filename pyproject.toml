@@ -13,6 +13,7 @@ dependencies = [
     "pydantic-settings>=2.15.0",
     "pyturso>=0.7.2",
     "pyyaml>=6.0.3",
+    "rangehttpserver>=1.4.0",
     "rich>=15.0.0",
     "typer>=0.27.2",
 ]

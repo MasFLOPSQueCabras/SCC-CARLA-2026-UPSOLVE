@@ -296,6 +296,15 @@ wheels = [
 ]
 
 [[package]]
+name = "rangehttpserver"
+version = "1.4.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/36/3b/1ec139d6028c6e5eb10301f040d6eee5c5427a4b1b4d614a2f78d3bba1bd/rangehttpserver-1.4.0.tar.gz", hash = "sha256:d5ddccee219b359598e41da0c5fbf30a2579297094f5a682755e2586388a5306", size = 6993, upload-time = "2024-08-27T18:08:43.418Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/2f/43/d7e2b9ad768c07b5473bea3ac7db9ca4d995c09399cbea3d4df1c0bd4955/rangehttpserver-1.4.0-py2.py3-none-any.whl", hash = "sha256:2a0c6926e4341de4cc19ec861292b005e4194ff497b1eefdeccb2992a5045452", size = 7773, upload-time = "2024-08-27T18:08:41.861Z" },
+]
+
+[[package]]
 name = "rich"
 version = "15.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -343,6 +352,7 @@ dependencies = [
     { name = "pydantic-settings" },
     { name = "pyturso" },
     { name = "pyyaml" },
+    { name = "rangehttpserver" },
     { name = "rich" },
     { name = "typer" },
 ]
@@ -360,6 +370,7 @@ requires-dist = [
     { name = "pydantic-settings", specifier = ">=2.15.0" },
     { name = "pyturso", specifier = ">=0.7.2" },
     { name = "pyyaml", specifier = ">=6.0.3" },
+    { name = "rangehttpserver", specifier = ">=1.4.0" },
     { name = "rich", specifier = ">=15.0.0" },
     { name = "typer", specifier = ">=0.27.2" },
 ]

@@ -1,7 +1,9 @@
+import json
 import logging
 import socket
 import subprocess
 import time
+from pathlib import Path
 from types import TracebackType
 from typing import Any, Self
 
@@ -260,66 +262,114 @@ class BMCController:
     def eject_virtual_media(self, node_id: int) -> bool:
         try:
             with self.get_client(node_id) as client:
-                for slot in (1, 2):
-                    client.post(
-                        f"/redfish/v1/Managers/1/VirtualMedia/{slot}/Actions/VirtualMedia.EjectMedia/",
-                        {},
-                    )
+                client.post(
+                    "/redfish/v1/Managers/1/VirtualMedia/1/Actions/VirtualMedia.EjectMedia/",
+                    {},
+                )
+                client.post(
+                    "/redfish/v1/Managers/1/VirtualMedia/2/Actions/VirtualMedia.EjectMedia/",
+                    {},
+                )
                 return True
         except (httpx2.HTTPError, OSError) as err:
-            logger.debug("Failed to eject media for Node %s: %s", node_id, err)
+            logger.debug("Failed to eject virtual media on Node %s: %s", node_id, err)
             return False
 
     def mount_and_boot(
-        self, node_id: int, iso_url: str, cidata_url: str | None = None
+        self,
+        node_id: int,
+        iso_url: str,
+        floppy_url: str | None = None,
     ) -> bool:
         try:
             with self.get_client(node_id) as client:
-                # 1. Eject any existing virtual media
-                for slot in (1, 2):
-                    client.post(
-                        f"/redfish/v1/Managers/1/VirtualMedia/{slot}/Actions/VirtualMedia.EjectMedia/",
-                        {},
-                    )
-
-                # 2. Insert cidata into Slot 1 (Floppy/USBStick) if provided
-                if cidata_url:
-                    resp1 = client.post(
-                        "/redfish/v1/Managers/1/VirtualMedia/1/Actions/VirtualMedia.InsertMedia/",
-                        {"Image": cidata_url},
-                    )
-                    if resp1.status_code not in (200, 204):
-                        return False
-
-                # 3. Insert OS ISO into Slot 2 (CD/DVD)
-                resp2 = client.post(
-                    "/redfish/v1/Managers/1/VirtualMedia/2/Actions/VirtualMedia.InsertMedia/",
-                    {"Image": iso_url},
+                # 1. Eject any existing virtual media in Slot 1 and Slot 2
+                client.post(
+                    "/redfish/v1/Managers/1/VirtualMedia/1/Actions/VirtualMedia.EjectMedia/",
+                    {},
                 )
-                if resp2.status_code not in (200, 204):
-                    return False
+                client.post(
+                    "/redfish/v1/Managers/1/VirtualMedia/2/Actions/VirtualMedia.EjectMedia/",
+                    {},
+                )
 
-                # 4. Configure Slot 2 to BootOnNextServerReset via OEM PATCH
-                patch_resp = client.patch(
+                # 2. Insert Floppy / OEMDRV in Slot 1 if provided
+                if floppy_url:
+                    client.post(
+                        "/redfish/v1/Managers/1/VirtualMedia/1/Actions/VirtualMedia.InsertMedia/",
+                        {"Image": floppy_url, "Inserted": True},
+                    )
+
+                # 3. Insert OS ISO in Slot 2 (CD/DVD)
+                client.post(
+                    "/redfish/v1/Managers/1/VirtualMedia/2/Actions/VirtualMedia.InsertMedia/",
+                    {"Image": iso_url, "Inserted": True},
+                )
+
+                # 4. Set One-Time Boot flag on Slot 2 via HPE OEM property
+                client.patch(
                     "/redfish/v1/Managers/1/VirtualMedia/2/",
                     {"Oem": {"Hpe": {"BootOnNextServerReset": True}}},
                 )
-                if patch_resp.status_code not in (200, 204):
-                    return False
 
-                # 5. Check current power state and trigger power on or reboot
+                # 5. Boot server from virtual media (turn On if powered off, ForceRestart if powered on)
                 sys_resp = client.get("/redfish/v1/Systems/1/")
                 power = (
                     sys_resp.json().get("PowerState", "").upper()
                     if sys_resp.status_code == 200
-                    else "UNKNOWN"
+                    else ""
                 )
                 reset_type = "On" if power == "OFF" else "ForceRestart"
-                boot_resp = client.post(
+
+                resp = client.post(
                     "/redfish/v1/Systems/1/Actions/ComputerSystem.Reset/",
                     {"ResetType": reset_type},
                 )
-                return boot_resp.status_code in (200, 204)
+                return resp.status_code in (200, 204)
         except (httpx2.HTTPError, OSError) as err:
             logger.debug("Failed to mount and boot Node %s: %s", node_id, err)
             return False
+
+    def get_bios_settings(self, node_id: int) -> dict[str, Any]:
+        """Retrieves active BIOS attributes from Redfish."""
+        try:
+            with self.get_client(node_id) as client:
+                resp = client.get("/redfish/v1/Systems/1/Bios/")
+                if resp.status_code == 200:
+                    return resp.json().get("Attributes", {})
+        except (httpx2.HTTPError, OSError) as err:
+            logger.debug("Failed to fetch BIOS settings for Node %s: %s", node_id, err)
+        return {}
+
+    def get_pending_bios_settings(self, node_id: int) -> dict[str, Any]:
+        """Retrieves pending (staged) BIOS attributes waiting for server reboot."""
+        try:
+            with self.get_client(node_id) as client:
+                resp = client.get("/redfish/v1/systems/1/bios/settings/")
+                if resp.status_code == 200:
+                    return resp.json().get("Attributes", {})
+        except (httpx2.HTTPError, OSError) as err:
+            logger.debug(
+                "Failed to fetch pending BIOS settings for Node %s: %s", node_id, err
+            )
+        return {}
+
+    def set_bios_settings(self, node_id: int, attributes: dict[str, Any]) -> bool:
+        """Stages BIOS attribute changes via PATCH to pending settings endpoint."""
+        if not attributes:
+            return True
+        try:
+            with self.get_client(node_id) as client:
+                payload = {"Attributes": attributes}
+                resp = client.patch("/redfish/v1/systems/1/bios/settings/", payload)
+                return resp.status_code in (200, 204)
+        except (httpx2.HTTPError, OSError) as err:
+            logger.debug("Failed to stage BIOS settings for Node %s: %s", node_id, err)
+            return False
+
+    def backup_bios(self, node_id: int, output_path: Path) -> Path:
+        """Dumps complete active BIOS attributes for a node into a formatted JSON file."""
+        attrs = self.get_bios_settings(node_id)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(json.dumps(attrs, indent=2), encoding="utf-8")
+        return output_path

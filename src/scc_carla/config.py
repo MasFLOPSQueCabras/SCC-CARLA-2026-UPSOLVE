@@ -25,13 +25,12 @@ class ClusterSettings(BaseSettings):
     bmc_user: str = ""
     bmc_password: str = ""
 
-    iso_name: str = "ubuntu-26.04.1-live-server-amd64.iso"
+    iso_name: str = "Rocky-10.2-x86_64-minimal.iso"
     iso_url: str = (
-        "https://releases.ubuntu.com/26.04/ubuntu-26.04.1-live-server-amd64.iso"
+        "https://download.rockylinux.org/pub/rocky/10/isos/x86_64/Rocky-10.2-x86_64-minimal.iso"
     )
 
     db_path: Path = Field(default_factory=lambda: Path.cwd() / "scc_state.db")
-    db_auth_token: str = ""
     node_username: str = "scct-2672"
 
     def get_node_ip(self, node_id: int) -> str:

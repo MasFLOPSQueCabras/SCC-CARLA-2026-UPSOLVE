@@ -1,27 +1,99 @@
+from pathlib import Path
+
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
+from scc_carla.bmc import BMCController
 from scc_carla.config import ClusterSettings
-from scc_carla.db import NodeLifecycle, get_all_nodes
+from scc_carla.db import NodeLifecycle, get_all_nodes, update_node_state
+from scc_carla.ssh import is_ssh_authenticated
 
 console = Console()
 
 
-def status_command(settings: ClusterSettings) -> None:
+def _probe_node(
+    bmc: BMCController,
+    settings: ClusterSettings,
+    node_id: int,
+    key_path: Path | None,
+) -> tuple[int, str, str]:
+    """Probes BMC power and SSH reachability for a node.
+
+    Returns: (node_id, power_status, reachability_status)
+    """
+    power = bmc.get_power_status(node_id)
+    reachability = "DOWN"
+
+    if power == "ON":
+        node_ip = settings.get_node_ip(node_id)
+        if is_ssh_authenticated(
+            node_ip, settings.node_username, key_path=key_path, timeout=3
+        ):
+            reachability = "SSH READY"
+        else:
+            reachability = "NO SSH"
+
+    return node_id, power, reachability
+
+
+def status_command(settings: ClusterSettings, probe: bool = True) -> None:
     nodes = get_all_nodes(settings.db_path, settings.team_id)
+    default_key = Path.home() / ".ssh" / "carla_scc_ed25519"
+    key_path = default_key if default_key.exists() else None
+
+    live_data: dict[int, tuple[str, str]] = {}
+    if probe:
+        with (
+            console.status(
+                "[bold cyan]Probing live cluster hardware and network state...[/bold cyan]",
+                spinner="dots",
+            ),
+            BMCController(settings) as bmc,
+        ):
+            for node in nodes:
+                nid, pwr, reach = _probe_node(
+                    bmc, settings, node.node_id, key_path
+                )
+                live_data[nid] = (pwr, reach)
+
+            # Reconcile database state based on live findings
+            for node in nodes:
+                pwr, reach = live_data.get(node.node_id, ("UNKNOWN", "UNKNOWN"))
+                new_state: NodeLifecycle | None = None
+
+                if reach == "SSH READY" and node.state in (
+                    NodeLifecycle.UNPROVISIONED,
+                    NodeLifecycle.INSTALLING,
+                    NodeLifecycle.OFFLINE,
+                ):
+                    new_state = NodeLifecycle.BOOTSTRAPPED
+                elif pwr == "OFF" and node.state in (
+                    NodeLifecycle.INSTALLING,
+                    NodeLifecycle.READY,
+                ):
+                    new_state = NodeLifecycle.OFFLINE
+
+                if new_state is not None:
+                    update_node_state(settings.db_path, node.node_id, new_state)
+
+        # Refresh nodes after reconciliation
+        nodes = get_all_nodes(settings.db_path, settings.team_id)
 
     table = Table(
         title="SCC@CARLA Cluster Nodes",
         show_header=True,
         header_style="bold cyan",
     )
-    table.add_column("Node ID", justify="center", style="bold")
+    table.add_column("Node", justify="center", style="bold")
     table.add_column("Hostname", justify="center")
     table.add_column("OS IP", justify="center")
     table.add_column("BMC IP", justify="center")
-    table.add_column("State", justify="center")
-    table.add_column("BIOS Profile", justify="center")
+    if probe:
+        table.add_column("Power", justify="center")
+        table.add_column("Reachability", justify="center")
+    table.add_column("Lifecycle", justify="center")
+    table.add_column("Profile", justify="center")
     table.add_column("Last Updated", justify="center")
 
     for node in nodes:
@@ -37,15 +109,43 @@ def status_command(settings: ClusterSettings) -> None:
             case _:
                 state_style = "[dim]UNPROVISIONED[/dim]"
 
-        table.add_row(
+        row = [
             str(node.node_id),
             node.hostname,
             node.os_ip,
             node.bmc_ip,
-            state_style,
-            node.bios_profile or "factory_baseline",
-            node.last_updated or "-",
+        ]
+
+        if probe:
+            pwr, reach = live_data.get(node.node_id, ("UNKNOWN", "UNKNOWN"))
+            pwr_style = (
+                "[bold green]ON[/bold green]"
+                if pwr == "ON"
+                else (
+                    "[dim]OFF[/dim]"
+                    if pwr == "OFF"
+                    else "[dim]UNKNOWN[/dim]"
+                )
+            )
+            reach_style = (
+                "[bold green]SSH READY[/bold green]"
+                if reach == "SSH READY"
+                else (
+                    "[bold yellow]NO SSH[/bold yellow]"
+                    if reach == "NO SSH"
+                    else "[dim]DOWN[/dim]"
+                )
+            )
+            row.extend([pwr_style, reach_style])
+
+        row.extend(
+            [
+                state_style,
+                node.bios_profile or "factory_baseline",
+                node.last_updated or "-",
+            ]
         )
+        table.add_row(*row)
 
     console.print()
     console.print(table)
