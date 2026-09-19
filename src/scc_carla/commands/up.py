@@ -1,19 +1,22 @@
 import mmap
 import subprocess
-import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from rich.console import Console
+from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 
 from scc_carla.bios import BiosProfile, get_profile_attributes
 from scc_carla.bmc import BMCController
+from scc_carla.commands.configure import configure_command
 from scc_carla.config import ClusterSettings
 from scc_carla.db import (
     ClusterLock,
     LockError,
     NodeLifecycle,
     ensure_db,
+    get_all_nodes,
     update_node_state,
 )
 from scc_carla.http_server import EphemeralRangeHTTPServer, is_running_on_bastion
@@ -68,80 +71,74 @@ def _ensure_bastion_iso(
     if on_bastion:
         cache_dir = Path.home() / ".cache" / "scc_carla" / "iso"
         cache_dir.mkdir(parents=True, exist_ok=True)
-        iso_path = cache_dir / settings.iso_name
+        iso_cache_path = cache_dir / settings.iso_name
+        dest_iso_path = Path(remote_serve_dir).expanduser() / settings.iso_name
 
-        if not iso_path.exists():
+        if not iso_cache_path.exists():
             console.print(
-                f"[cyan]Downloading {settings.iso_name} directly on bastion...[/cyan]"
+                f"[cyan]Downloading {settings.iso_name} (~2 GB) to local cache...[/cyan]"
             )
             subprocess.run(
-                ["wget", "-c", settings.iso_url, "-O", str(iso_path)],
+                ["curl", "-L", "-o", str(iso_cache_path), settings.iso_url],
                 check=True,
             )
+            _patch_iso_in_place(iso_cache_path)
 
-        _patch_iso_in_place(iso_path)
-        serve_path = Path(remote_serve_dir).expanduser()
-        serve_path.mkdir(parents=True, exist_ok=True)
-        symlink_path = serve_path / settings.iso_name
-        if not symlink_path.exists():
-            symlink_path.symlink_to(iso_path)
+        if not dest_iso_path.exists():
+            dest_iso_path.parent.mkdir(parents=True, exist_ok=True)
+            console.print(
+                f"[cyan]Copying cached ISO to HTTP serving directory {dest_iso_path}...[/cyan]"
+            )
+            subprocess.run(
+                ["cp", str(iso_cache_path), str(dest_iso_path)], check=True
+            )
         console.print("[green]✓[/green] Bastion direct-boot ISO ready.")
-    else:
-        # Check if already cached on bastion
-        check_cmd = [
-            "ssh",
-            settings.bastion_ssh_host,
-            f"test -f ~/.cache/scc_carla/iso/{settings.iso_name} && echo EXISTS || echo MISSING",
-        ]
-        res = subprocess.run(
-            check_cmd, capture_output=True, text=True, check=True
-        )
-        if "MISSING" in res.stdout:
-            console.print(
-                f"[cyan]Downloading {settings.iso_name} directly on bastion (wire speed)...[/cyan]"
-            )
-            subprocess.run(
-                [
-                    "ssh",
-                    settings.bastion_ssh_host,
-                    f"mkdir -p ~/.cache/scc_carla/iso && wget -c '{settings.iso_url}' -O ~/.cache/scc_carla/iso/{settings.iso_name}",
-                ],
-                check=True,
-            )
+        return
 
-        patch_and_link_script = (
-            f"import os, mmap\n"
-            f"iso_path = os.path.expanduser('~/.cache/scc_carla/iso/{settings.iso_name}')\n"
-            f"f = open(iso_path, 'r+b')\n"
-            f"mm = mmap.mmap(f.fileno(), 0)\n"
-            f"s = 0\n"
-            f"while True:\n"
-            f"    i = mm.find(b'set default=\"1\"', s)\n"
-            f"    if i == -1: break\n"
-            f"    mm[i:i+15] = b'set default=\"0\"'\n"
-            f"    s = i + 15\n"
-            f"s = 0\n"
-            f"while True:\n"
-            f"    i = mm.find(b'set timeout=60', s)\n"
-            f"    if i == -1: break\n"
-            f"    mm[i:i+14] = b'set timeout=02'\n"
-            f"    s = i + 14\n"
-            f"mm.flush()\n"
-            f"f.close()\n"
-            f"serve_dir = os.path.expanduser('{remote_serve_dir}')\n"
-            f"os.makedirs(serve_dir, exist_ok=True)\n"
-            f"link = os.path.join(serve_dir, '{settings.iso_name}')\n"
-            f"if not os.path.exists(link):\n"
-            f"    os.symlink(iso_path, link)\n"
+    # Off-bastion: check if ISO is already in bastion cache or serving directory
+    check_script = (
+        f"mkdir -p ~/.cache/scc_carla/iso {remote_serve_dir} && "
+        f"if [ -f {remote_serve_dir}/{settings.iso_name} ]; then "
+        f"  echo 'READY'; "
+        f"elif [ -f ~/.cache/scc_carla/iso/{settings.iso_name} ]; then "
+        f"  cp ~/.cache/scc_carla/iso/{settings.iso_name} {remote_serve_dir}/{settings.iso_name} && echo 'COPIED'; "
+        f"else "
+        f"  echo 'MISSING'; "
+        f"fi"
+    )
+    res = subprocess.run(
+        ["ssh", settings.bastion_ssh_host, check_script],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    status = res.stdout.strip()
+
+    if status == "MISSING":
+        console.print(
+            f"[cyan]Downloading {settings.iso_name} (~2 GB) on bastion...[/cyan]"
+        )
+        download_cmd = (
+            f"curl -L -o ~/.cache/scc_carla/iso/{settings.iso_name} {settings.iso_url} && "
+            f"python3 -c '"
+            f"import mmap; "
+            f"f = open(\"{Path.home()}/.cache/scc_carla/iso/{settings.iso_name}\", \"r+b\"); "
+            f"mm = mmap.mmap(f.fileno(), 0); "
+            f"i = mm.find(b\"set default=\\\"1\\\"\"); "
+            f"mm[i:i+15] = b\"set default=\\\"0\\\"\"; "
+            f"i = mm.find(b\"set timeout=60\"); "
+            f"mm[i:i+14] = b\"set timeout=02\"; "
+            f"mm.flush(); f.close()' && "
+            f"cp ~/.cache/scc_carla/iso/{settings.iso_name} {remote_serve_dir}/{settings.iso_name}"
         )
         subprocess.run(
-            [
-                "ssh",
-                settings.bastion_ssh_host,
-                f'python3 -c "{patch_and_link_script}"',
-            ],
+            ["ssh", settings.bastion_ssh_host, download_cmd],
             check=True,
         )
+        console.print(
+            "[green]✓[/green] Bastion direct-boot ISO downloaded and ready."
+        )
+    else:
         console.print("[green]✓[/green] Bastion direct-boot ISO ready.")
 
 
@@ -153,6 +150,8 @@ def _provision_single_node(
     local_staging_dir: Path,
     bmc: BMCController,
     poll_timeout: int,
+    progress: Progress,
+    task_id: int,
     bios_profile: BiosProfile = BiosProfile.HPC,
     privkey_path: Path | None = None,
     remote_serve_dir: str = "~/scc_serve",
@@ -161,8 +160,9 @@ def _provision_single_node(
     node_ip = settings.get_node_ip(node)
     hostname = settings.get_hostname(node)
 
-    console.print(
-        f"[cyan]Provisioning {hostname} ({node_ip}) with BIOS profile '{bios_profile.value}'...[/cyan]"
+    progress.update(
+        task_id,
+        description=f"[bold cyan]{hostname}[/bold cyan]: Staging kickstart & OEMDRV...",
     )
     update_node_state(
         settings,
@@ -194,7 +194,6 @@ def _provision_single_node(
         dest_path = Path(remote_serve_dir).expanduser() / oemdrv_name
         dest_path.write_bytes(oemdrv_path.read_bytes())
     else:
-        console.print(f"[cyan]Uploading {oemdrv_name} (~4 MB) to bastion...[/cyan]")
         subprocess.run(
             [
                 "scp",
@@ -206,18 +205,12 @@ def _provision_single_node(
         )
 
     # 1. Stage BIOS Profile Attributes via Redfish
-    bios_attrs = get_profile_attributes(bios_profile)
-    console.print(
-        f"[cyan]Configuring BIOS '{bios_profile.value}' profile on {hostname}...[/cyan]"
+    progress.update(
+        task_id,
+        description=f"[bold cyan]{hostname}[/bold cyan]: Configuring BIOS '{bios_profile.value}' profile...",
     )
-    if bmc.set_bios_settings(node, bios_attrs):
-        console.print(
-            f"[green]✓[/green] Staged BIOS '{bios_profile.value}' settings on {hostname}."
-        )
-    else:
-        console.print(
-            f"[bold yellow]⚠ Warning: Could not stage BIOS settings on {hostname}, proceeding with boot...[/bold yellow]"
-        )
+    bios_attrs = get_profile_attributes(bios_profile)
+    bmc.set_bios_settings(node, bios_attrs)
 
     # 2. Virtual Media Mount & Reboot
     iso_url = f"http://{settings.bastion_http_ip}:{settings.bastion_http_port}/{settings.iso_name}"
@@ -225,67 +218,57 @@ def _provision_single_node(
         f"http://{settings.bastion_http_ip}:{settings.bastion_http_port}/{oemdrv_name}"
     )
 
-    console.print(f"[cyan]Mounting Virtual Media on {hostname} via iLO...[/cyan]")
-    if not bmc.mount_and_boot(node, iso_url=iso_url, floppy_url=oemdrv_url):
-        console.print(f"[bold red]Failed to mount and boot {hostname}.[/bold red]")
-        update_node_state(settings, node, NodeLifecycle.OFFLINE)
-        return False
-
-    console.print(
-        f"[green]✓[/green] Virtual Media mounted and {hostname} reboot triggered."
+    progress.update(
+        task_id,
+        description=f"[bold cyan]{hostname}[/bold cyan]: Mounting Virtual Media & triggering boot...",
     )
-
-    start_time = time.time()
-    ssh_ready = False
-    stop_timer = threading.Event()
-    timeout_suffix = " (no timeout)" if (no_timeout or poll_timeout <= 0) else ""
-
-    with console.status(
-        f"[bold cyan][00:00] Waiting for {hostname} installation and authenticated SSH{timeout_suffix}...[/bold cyan]",
-        spinner="dots",
-    ) as status:
-
-        def update_timer() -> None:
-            while not stop_timer.wait(1.0):
-                elapsed_sec = int(time.time() - start_time)
-                mins = elapsed_sec // 60
-                secs = elapsed_sec % 60
-                status.update(
-                    f"[bold cyan][{mins:02d}:{secs:02d}] "
-                    f"Waiting for {hostname} installation and authenticated SSH{timeout_suffix}...[/bold cyan]"
-                )
-
-        timer_thread = threading.Thread(target=update_timer, daemon=True)
-        timer_thread.start()
-
-        try:
-            while True:
-                if not no_timeout and poll_timeout > 0 and (time.time() - start_time >= poll_timeout):
-                    break
-                if is_ssh_authenticated(
-                    node_ip, settings.node_username, key_path=privkey_path
-                ):
-                    ssh_ready = True
-                    break
-                time.sleep(5)
-        finally:
-            stop_timer.set()
-            timer_thread.join(timeout=1.0)
-
-    if not ssh_ready:
-        console.print(
-            f"[bold red]Timed out waiting for {hostname} installation and authenticated SSH.[/bold red]"
+    if not bmc.mount_and_boot(node, iso_url=iso_url, floppy_url=oemdrv_url):
+        progress.update(
+            task_id,
+            description=f"[bold red]✗ {hostname}[/bold red]: Failed to mount and boot.",
+            completed=100,
         )
         update_node_state(settings, node, NodeLifecycle.OFFLINE)
         return False
 
-    elapsed_total = int(time.time() - start_time)
-    console.print(
-        f"[green]✓[/green] {hostname} SSH online in {elapsed_total // 60}m {elapsed_total % 60}s."
+    start_time = time.time()
+    ssh_ready = False
+    timeout_suffix = " (no timeout)" if (no_timeout or poll_timeout <= 0) else ""
+
+    progress.update(
+        task_id,
+        description=f"[bold cyan]{hostname}[/bold cyan]: Installing OS & waiting for SSH{timeout_suffix}...",
+    )
+
+    while True:
+        if not no_timeout and poll_timeout > 0 and (time.time() - start_time >= poll_timeout):
+            break
+        if is_ssh_authenticated(
+            node_ip, settings.node_username, key_path=privkey_path
+        ):
+            ssh_ready = True
+            break
+        time.sleep(5)
+
+    if not ssh_ready:
+        progress.update(
+            task_id,
+            description=f"[bold red]✗ {hostname}[/bold red]: Timed out waiting for SSH.",
+            completed=100,
+        )
+        update_node_state(settings, node, NodeLifecycle.OFFLINE)
+        return False
+
+    elapsed_install = int(time.time() - start_time)
+    progress.update(
+        task_id,
+        description=(
+            f"[bold cyan]{hostname}[/bold cyan]: SSH online ({elapsed_install // 60}m {elapsed_install % 60}s). "
+            "Ejecting media & running Ansible (node_independent)..."
+        ),
     )
 
     bmc.eject_virtual_media(node)
-    console.print(f"[green]✓[/green] Ejected Virtual Media on {hostname}.")
     update_node_state(
         settings,
         node,
@@ -293,15 +276,41 @@ def _provision_single_node(
         pubkey=pubkey,
         bios_profile=bios_profile.value,
     )
-    console.print(
-        f"[bold green]{hostname} successfully provisioned and online at {node_ip}![/bold green]"
+
+    # 3. Execute Node-Independent Ansible configuration in parallel
+    ansible_ok = configure_command(
+        settings,
+        limit=hostname,
+        tags="node_independent",
+        exit_on_error=False,
     )
-    return True
+
+    if ansible_ok:
+        update_node_state(
+            settings,
+            node,
+            NodeLifecycle.READY,
+            pubkey=pubkey,
+            bios_profile=bios_profile.value,
+        )
+        progress.update(
+            task_id,
+            description=f"[bold green]✓ {hostname}[/bold green]: Provisioned & configured ({node_ip})",
+            completed=100,
+        )
+        return True
+    else:
+        progress.update(
+            task_id,
+            description=f"[bold yellow]⚠ {hostname}[/bold yellow]: OS installed but Ansible had warnings ({node_ip})",
+            completed=100,
+        )
+        return True
 
 
 def up_command(
     settings: ClusterSettings,
-    node: int | None = None,
+    node: int | list[int] | None = None,
     all_nodes: bool = False,
     pubkey_path: Path | None = None,
     poll_timeout: int = 1800,
@@ -362,25 +371,98 @@ def up_command(
         ):
             _ensure_bastion_iso(settings, remote_serve_dir="~/scc_serve")
 
-            for n in target_nodes:
-                success = _provision_single_node(
-                    settings=settings,
-                    node=n,
-                    pubkey=pubkey,
-                    template_engine=template_engine,
-                    local_staging_dir=local_staging_dir,
-                    bmc=bmc,
-                    poll_timeout=poll_timeout,
-                    bios_profile=bios_profile,
-                    privkey_path=privkey_file,
-                    remote_serve_dir="~/scc_serve",
-                    no_timeout=no_timeout,
-                )
-                if not success and len(target_nodes) > 1:
-                    console.print(
-                        f"[bold red]Stopping batch provisioning due to failure on Node {n}.[/bold red]"
+            console.print(
+                f"[cyan]Initiating parallel provisioning across {len(target_nodes)} target node(s)...[/cyan]"
+            )
+
+            progress = Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                TimeElapsedColumn(),
+                console=console,
+            )
+
+            results: dict[int, bool] = {}
+            with progress:
+                node_tasks = {
+                    n: progress.add_task(
+                        f"[bold cyan]{settings.get_hostname(n)}[/bold cyan]: Initializing...",
+                        total=None,
                     )
-                    break
+                    for n in target_nodes
+                }
+
+                with ThreadPoolExecutor(max_workers=len(target_nodes)) as executor:
+                    futures = {
+                        executor.submit(
+                            _provision_single_node,
+                            settings=settings,
+                            node=n,
+                            pubkey=pubkey,
+                            template_engine=template_engine,
+                            local_staging_dir=local_staging_dir,
+                            bmc=bmc,
+                            poll_timeout=poll_timeout,
+                            progress=progress,
+                            task_id=node_tasks[n],
+                            bios_profile=bios_profile,
+                            privkey_path=privkey_file,
+                            remote_serve_dir="~/scc_serve",
+                            no_timeout=no_timeout,
+                        ): n
+                        for n in target_nodes
+                    }
+
+                    for future in as_completed(futures):
+                        n = futures[future]
+                        try:
+                            results[n] = future.result()
+                        except Exception as exc:  # noqa: BLE001
+                            results[n] = False
+                            progress.update(
+                                node_tasks[n],
+                                description=f"[bold red]✗ {settings.get_hostname(n)}[/bold red]: Exception: {exc}",
+                                completed=100,
+                            )
+
+            # Check if all 3 cluster nodes are ready to run cluster coordination
+            try:
+                all_cluster_nodes = get_all_nodes(settings)
+                all_3_online = len(all_cluster_nodes) == 3 and all(
+                    cn.state in (NodeLifecycle.READY, NodeLifecycle.BOOTSTRAPPED)
+                    for cn in all_cluster_nodes
+                )
+                if all_3_online:
+                    console.print(
+                        "\n[cyan]All 3 cluster nodes online! Running cluster-wide coordination (SSH trust, MPI hostfile, InfiniBand)...[/cyan]"
+                    )
+                    coord_ok = configure_command(
+                        settings,
+                        all_nodes=True,
+                        tags="cluster_coordination",
+                        exit_on_error=False,
+                    )
+                    if coord_ok:
+                        console.print(
+                            "[bold green]✓ Full 3-node cluster coordinated and verified for MPI/HPL.[/bold green]"
+                        )
+                    else:
+                        console.print(
+                            "[bold yellow]⚠ Cluster coordination completed with non-fatal warnings.[/bold yellow]"
+                        )
+                else:
+                    ready_count = sum(
+                        1
+                        for cn in all_cluster_nodes
+                        if cn.state
+                        in (NodeLifecycle.READY, NodeLifecycle.BOOTSTRAPPED)
+                    )
+                    console.print(
+                        f"\n[dim]Active nodes: {ready_count}/3. Cluster-wide coordination will run when all 3 nodes are online.[/dim]"
+                    )
+            except Exception as e:  # noqa: BLE001
+                console.print(f"[dim]Could not evaluate cluster coordination: {e}[/dim]")
+
     except LockError as e:
         console.print(f"[bold red]Lock conflict: {e}[/bold red]")
         console.print(

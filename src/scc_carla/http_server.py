@@ -72,7 +72,31 @@ class EphemeralRangeHTTPServer:
             )
             return
 
-        # Running on local workstation: start Range server directly on bastion via SSH
+        # Running on local workstation: check if Range server is already active on bastion
+        check_alive = subprocess.run(
+            [
+                "ssh",
+                self.bastion_ssh_host,
+                (
+                    f"python3 -c \""
+                    f"import socket; s = socket.socket(); s.settimeout(1.0); "
+                    f"res = s.connect_ex(('{self.bind_ip}', {self.port})); s.close(); "
+                    f"exit(0 if res == 0 else 1)\""
+                ),
+            ],
+            check=False,
+            capture_output=True,
+        )
+        if check_alive.returncode == 0:
+            logger.info(
+                "Active Range HTTP server detected on bastion %s:%s. Reusing existing instance.",
+                self.bind_ip,
+                self.port,
+            )
+            self._reused_existing = True
+            return
+
+        self._reused_existing = False
         logger.info(
             "Cleaning any stale HTTP servers on bastion port %s...", self.port
         )
@@ -146,6 +170,14 @@ class EphemeralRangeHTTPServer:
         )
 
     def stop(self) -> None:
+        if getattr(self, "_reused_existing", False):
+            logger.info(
+                "Leaving active shared HTTP server running on bastion %s:%s",
+                self.bind_ip,
+                self.port,
+            )
+            return
+
         if self._bastion_proc:
             try:
                 self._bastion_proc.terminate()
@@ -157,6 +189,20 @@ class EphemeralRangeHTTPServer:
             self._bastion_proc = None
 
         if not self.on_bastion:
+            # Check if any cluster nodes are actively installing before tearing down remote server
+            try:
+                from scc_carla.config import get_settings
+                from scc_carla.db import NodeLifecycle, get_all_nodes
+
+                nodes = get_all_nodes(get_settings())
+                if any(n.state == NodeLifecycle.INSTALLING for n in nodes):
+                    logger.info(
+                        "Node(s) currently installing; preserving bastion HTTP server and staging directory."
+                    )
+                    return
+            except Exception as e:  # noqa: BLE001
+                logger.debug("Could not verify node installation state: %s", e)
+
             # Clean up processes and remove staging directory on bastion
             subprocess.run(
                 [
@@ -189,8 +235,24 @@ class EphemeralRangeHTTPServer:
         bastion_ssh_host: str,
         port: int,
         remote_dir: str = "~/scc_serve",
-    ) -> None:
-        """Kills any HTTP servers bound to port on the bastion and sweeps the staging directory."""
+        force: bool = False,
+    ) -> bool:
+        """Kills any HTTP servers bound to port on the bastion and sweeps the staging directory if safe."""
+        if not force:
+            try:
+                from scc_carla.config import get_settings
+                from scc_carla.db import NodeLifecycle, get_all_nodes
+
+                nodes = get_all_nodes(get_settings())
+                if any(n.state == NodeLifecycle.INSTALLING for n in nodes):
+                    logger.warning(
+                        "Preserving bastion HTTP server on port %s: one or more nodes are still in INSTALLING state.",
+                        port,
+                    )
+                    return False
+            except Exception as e:  # noqa: BLE001
+                logger.debug("Could not verify node installation state: %s", e)
+
         subprocess.run(
             [
                 "ssh",
@@ -203,3 +265,4 @@ class EphemeralRangeHTTPServer:
             check=False,
             capture_output=True,
         )
+        return True

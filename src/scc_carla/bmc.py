@@ -15,6 +15,12 @@ from scc_carla.http_server import is_running_on_bastion
 logger = logging.getLogger(__name__)
 
 
+def _find_free_local_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
 class SSHSocksTunnel:
     """Manages an ephemeral SSH SOCKS5 tunnel to the bastion host."""
 
@@ -25,7 +31,8 @@ class SSHSocksTunnel:
 
     def start(self, timeout: float = 10.0) -> None:
         if self._is_port_open():
-            return
+            # If the default port is already occupied by another process, allocate a free ephemeral port
+            self.local_port = _find_free_local_port()
 
         self.process = subprocess.Popen(
             ["ssh", "-D", str(self.local_port), "-N", self.bastion_ssh_host],
@@ -186,7 +193,7 @@ class BMCController:
                 local_port=self.socks_port,
             )
             self._tunnel.start()
-        return f"socks5://127.0.0.1:{self.socks_port}"
+        return f"socks5://127.0.0.1:{self._tunnel.local_port}"
 
     def close(self) -> None:
         if self._tunnel is not None:

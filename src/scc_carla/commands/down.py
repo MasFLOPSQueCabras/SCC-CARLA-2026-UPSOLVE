@@ -1,3 +1,5 @@
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
 from rich.console import Console
 
 from scc_carla.bmc import BMCController
@@ -17,7 +19,7 @@ console = Console()
 
 def down_command(
     settings: ClusterSettings,
-    node: int | None = None,
+    node: int | list[int] | None = None,
     all_nodes: bool = False,
     reset_db: bool = False,
     force: bool = False,
@@ -40,7 +42,7 @@ def down_command(
         ):
             if targets:
                 with BMCController(settings) as bmc:
-                    for n in targets:
+                    def _decommission_node(n: int) -> None:
                         hostname = settings.get_hostname(n)
                         console.print(
                             f"[cyan]Decommissioning {hostname}...[/cyan]"
@@ -58,13 +60,24 @@ def down_command(
                             f"[bold green]{hostname} is offline and decommissioned.[/bold green]"
                         )
 
-            console.print("[cyan]Sweeping cluster background resources...[/cyan]")
-            EphemeralRangeHTTPServer.sweep_remote(
-                settings.bastion_ssh_host, settings.bastion_http_port
-            )
-            console.print(
-                f"[green]✓[/green] Swept RangeHTTPServer instances on port {settings.bastion_http_port}"
-            )
+                    with ThreadPoolExecutor(max_workers=max(1, len(targets))) as executor:
+                        futures = [executor.submit(_decommission_node, n) for n in targets]
+                        for f in as_completed(futures):
+                            f.result()
+
+            # Only sweep shared cluster resources if tearing down all nodes or resetting DB
+            should_sweep = reset_db or (all_nodes or len(targets) == 3)
+            if should_sweep:
+                console.print("[cyan]Sweeping cluster background resources...[/cyan]")
+                swept = EphemeralRangeHTTPServer.sweep_remote(
+                    settings.bastion_ssh_host,
+                    settings.bastion_http_port,
+                    force=reset_db,
+                )
+                if swept:
+                    console.print(
+                        f"[green]✓[/green] Swept RangeHTTPServer instances on port {settings.bastion_http_port}"
+                    )
 
             if reset_db:
                 reset_cluster_state(settings)
@@ -82,4 +95,3 @@ def down_command(
     console.print(
         "[bold green]Teardown complete. Zero lingering state.[/bold green]"
     )
-

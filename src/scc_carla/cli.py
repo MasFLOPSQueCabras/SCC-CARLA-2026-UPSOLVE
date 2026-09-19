@@ -59,8 +59,8 @@ app.add_typer(lock_app, name="lock")
 @app.command("up")
 def up(
     node: Annotated[
-        int | None,
-        typer.Option("--node", "-n", help="Node ID to provision (1, 2, or 3)"),
+        list[int] | None,
+        typer.Option("--node", "-n", help="Node ID(s) to provision (1, 2, or 3)"),
     ] = None,
     all_nodes: Annotated[
         bool,
@@ -117,8 +117,8 @@ def up(
 @app.command("down")
 def down(
     node: Annotated[
-        int | None,
-        typer.Option("--node", "-n", help="Node ID to decommission (1, 2, or 3)"),
+        list[int] | None,
+        typer.Option("--node", "-n", help="Node ID(s) to decommission (1, 2, or 3)"),
     ] = None,
     all_nodes: Annotated[
         bool,
@@ -171,6 +171,22 @@ def configure(
             help="Playbook file name inside ansible/playbooks/ (default: site.yaml)",
         ),
     ] = "site.yaml",
+    node: Annotated[
+        list[int] | None,
+        typer.Option(
+            "--node",
+            "-n",
+            help="Node ID(s) to configure (1, 2, or 3)",
+        ),
+    ] = None,
+    all_nodes: Annotated[
+        bool,
+        typer.Option(
+            "--all",
+            "-a",
+            help="Configure all cluster nodes (1, 2, and 3)",
+        ),
+    ] = False,
     limit: Annotated[
         str | None,
         typer.Option(
@@ -200,6 +216,8 @@ def configure(
     settings = get_settings()
     configure_command(
         settings,
+        node=node,
+        all_nodes=all_nodes,
         playbook=playbook,
         limit=limit,
         check=check,
