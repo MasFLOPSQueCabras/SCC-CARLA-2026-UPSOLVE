@@ -357,55 +357,74 @@ class BMCController:
         node_id: int,
         iso_url: str,
         floppy_url: str | None = None,
+        max_attempts: int = 3,
     ) -> bool:
-        try:
-            with self.get_client(node_id) as client:
-                # 1. Eject any existing virtual media in Slot 1 and Slot 2
-                client.post(
-                    "/redfish/v1/Managers/1/VirtualMedia/1/Actions/VirtualMedia.EjectMedia/",
-                    {},
-                )
-                client.post(
-                    "/redfish/v1/Managers/1/VirtualMedia/2/Actions/VirtualMedia.EjectMedia/",
-                    {},
-                )
-
-                # 2. Insert Floppy / OEMDRV in Slot 1 if provided
-                if floppy_url:
+        for attempt in range(1, max_attempts + 1):
+            try:
+                with self.get_client(node_id) as client:
+                    # 1. Eject any existing virtual media in Slot 1 and Slot 2
                     client.post(
-                        "/redfish/v1/Managers/1/VirtualMedia/1/Actions/VirtualMedia.InsertMedia/",
-                        {"Image": floppy_url, "Inserted": True},
+                        "/redfish/v1/Managers/1/VirtualMedia/1/Actions/VirtualMedia.EjectMedia/",
+                        {},
+                    )
+                    client.post(
+                        "/redfish/v1/Managers/1/VirtualMedia/2/Actions/VirtualMedia.EjectMedia/",
+                        {},
                     )
 
-                # 3. Insert OS ISO in Slot 2 (CD/DVD)
-                client.post(
-                    "/redfish/v1/Managers/1/VirtualMedia/2/Actions/VirtualMedia.InsertMedia/",
-                    {"Image": iso_url, "Inserted": True},
-                )
+                    # 2. Insert Floppy / OEMDRV in Slot 1 if provided
+                    if floppy_url:
+                        client.post(
+                            "/redfish/v1/Managers/1/VirtualMedia/1/Actions/VirtualMedia.InsertMedia/",
+                            {"Image": floppy_url, "Inserted": True},
+                        )
 
-                # 4. Set One-Time Boot flag on Slot 2 via HPE OEM property
-                client.patch(
-                    "/redfish/v1/Managers/1/VirtualMedia/2/",
-                    {"Oem": {"Hpe": {"BootOnNextServerReset": True}}},
-                )
+                    # 3. Insert OS ISO in Slot 2 (CD/DVD)
+                    client.post(
+                        "/redfish/v1/Managers/1/VirtualMedia/2/Actions/VirtualMedia.InsertMedia/",
+                        {"Image": iso_url, "Inserted": True},
+                    )
 
-                # 5. Boot server from virtual media (turn On if powered off, ForceRestart if powered on)
-                sys_resp = client.get("/redfish/v1/Systems/1/")
-                power = (
-                    sys_resp.json().get("PowerState", "").upper()
-                    if sys_resp.status_code == 200
-                    else ""
-                )
-                reset_type = "On" if power == "OFF" else "ForceRestart"
+                    # 4. Set One-Time Boot flag on Slot 2 via HPE OEM property
+                    client.patch(
+                        "/redfish/v1/Managers/1/VirtualMedia/2/",
+                        {"Oem": {"Hpe": {"BootOnNextServerReset": True}}},
+                    )
 
-                resp = client.post(
-                    "/redfish/v1/Systems/1/Actions/ComputerSystem.Reset/",
-                    {"ResetType": reset_type},
+                    # 5. Boot server from virtual media (turn On if powered off, ForceRestart if powered on)
+                    sys_resp = client.get("/redfish/v1/Systems/1/")
+                    power = (
+                        sys_resp.json().get("PowerState", "").upper()
+                        if sys_resp.status_code == 200
+                        else ""
+                    )
+                    reset_type = "On" if power == "OFF" else "ForceRestart"
+
+                    resp = client.post(
+                        "/redfish/v1/Systems/1/Actions/ComputerSystem.Reset/",
+                        {"ResetType": reset_type},
+                    )
+                    if resp.status_code in (200, 204):
+                        return True
+                    logger.warning(
+                        "Reset call returned status %s on Node %s (attempt %d/%d)",
+                        resp.status_code,
+                        node_id,
+                        attempt,
+                        max_attempts,
+                    )
+            except (httpx2.HTTPError, OSError) as err:
+                logger.warning(
+                    "Virtual media mount/boot attempt %d/%d failed on Node %s: %s",
+                    attempt,
+                    max_attempts,
+                    node_id,
+                    err,
                 )
-                return resp.status_code in (200, 204)
-        except (httpx2.HTTPError, OSError) as err:
-            logger.debug("Failed to mount and boot Node %s: %s", node_id, err)
-            return False
+            if attempt < max_attempts:
+                time.sleep(2.0)
+
+        return False
 
     def get_bios_settings(self, node_id: int) -> dict[str, Any]:
         """Retrieves active BIOS attributes from Redfish."""
