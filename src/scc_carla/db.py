@@ -4,6 +4,8 @@ import logging
 import os
 import socket
 import subprocess
+import threading
+import time
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -18,6 +20,7 @@ from scc_carla.state_worker import execute_action, get_file_hash
 logger = logging.getLogger(__name__)
 
 _WORKER_SYNCED = False
+_DB_THREAD_LOCK = threading.RLock()
 
 
 class NodeLifecycle(StrEnum):
@@ -61,72 +64,76 @@ def _ensure_worker_synced(settings: ClusterSettings) -> None:
     if _WORKER_SYNCED:
         return
 
-    local_worker_path = Path(__file__).with_name("state_worker.py")
-    local_hash = get_file_hash(local_worker_path)
+    with _DB_THREAD_LOCK:
+        if _WORKER_SYNCED:
+            return
 
-    remote_dir = "~/.config/scc_carla"
-    remote_hash_file = f"{remote_dir}/state_worker.hash"
-    remote_worker_file = f"{remote_dir}/state_worker.py"
+        local_worker_path = Path(__file__).with_name("state_worker.py")
+        local_hash = get_file_hash(local_worker_path)
 
-    check_cmd = [
-        "ssh",
-        "-o",
-        "ControlMaster=auto",
-        "-o",
-        "ControlPath=/tmp/scc-carla-ssh-%r@%h:%p",
-        "-o",
-        "ControlPersist=60s",
-        settings.bastion_ssh_host,
-        f"cat {remote_hash_file} 2>/dev/null || true",
-    ]
-    res = subprocess.run(check_cmd, capture_output=True, text=True, check=False)
-    remote_hash = res.stdout.strip()
+        remote_dir = "~/.config/scc_carla"
+        remote_hash_file = f"{remote_dir}/state_worker.hash"
+        remote_worker_file = f"{remote_dir}/state_worker.py"
 
-    if remote_hash == local_hash:
+        check_cmd = [
+            "ssh",
+            "-o",
+            "ControlMaster=auto",
+            "-o",
+            "ControlPath=/tmp/scc-carla-ssh-%r@%h:%p",
+            "-o",
+            "ControlPersist=60s",
+            settings.bastion_ssh_host,
+            f"cat {remote_hash_file} 2>/dev/null || true",
+        ]
+        res = subprocess.run(check_cmd, capture_output=True, text=True, check=False)
+        remote_hash = res.stdout.strip()
+
+        if remote_hash == local_hash:
+            _WORKER_SYNCED = True
+            return
+
+        logger.info("Syncing state_worker.py to bastion (hash: %s)...", local_hash[:8])
+        mkdir_cmd = [
+            "ssh",
+            "-o",
+            "ControlMaster=auto",
+            "-o",
+            "ControlPath=/tmp/scc-carla-ssh-%r@%h:%p",
+            "-o",
+            "ControlPersist=60s",
+            settings.bastion_ssh_host,
+            f"mkdir -p {remote_dir}",
+        ]
+        subprocess.run(mkdir_cmd, check=True, capture_output=True)
+
+        scp_cmd = [
+            "scp",
+            "-o",
+            "ControlMaster=auto",
+            "-o",
+            "ControlPath=/tmp/scc-carla-ssh-%r@%h:%p",
+            "-o",
+            "ControlPersist=60s",
+            "-q",
+            str(local_worker_path),
+            f"{settings.bastion_ssh_host}:{remote_worker_file}",
+        ]
+        subprocess.run(scp_cmd, check=True)
+
+        write_hash_cmd = [
+            "ssh",
+            "-o",
+            "ControlMaster=auto",
+            "-o",
+            "ControlPath=/tmp/scc-carla-ssh-%r@%h:%p",
+            "-o",
+            "ControlPersist=60s",
+            settings.bastion_ssh_host,
+            f"echo '{local_hash}' > {remote_hash_file}",
+        ]
+        subprocess.run(write_hash_cmd, check=True, capture_output=True)
         _WORKER_SYNCED = True
-        return
-
-    logger.info("Syncing state_worker.py to bastion (hash: %s)...", local_hash[:8])
-    mkdir_cmd = [
-        "ssh",
-        "-o",
-        "ControlMaster=auto",
-        "-o",
-        "ControlPath=/tmp/scc-carla-ssh-%r@%h:%p",
-        "-o",
-        "ControlPersist=60s",
-        settings.bastion_ssh_host,
-        f"mkdir -p {remote_dir}",
-    ]
-    subprocess.run(mkdir_cmd, check=True, capture_output=True)
-
-    scp_cmd = [
-        "scp",
-        "-o",
-        "ControlMaster=auto",
-        "-o",
-        "ControlPath=/tmp/scc-carla-ssh-%r@%h:%p",
-        "-o",
-        "ControlPersist=60s",
-        "-q",
-        str(local_worker_path),
-        f"{settings.bastion_ssh_host}:{remote_worker_file}",
-    ]
-    subprocess.run(scp_cmd, check=True)
-
-    write_hash_cmd = [
-        "ssh",
-        "-o",
-        "ControlMaster=auto",
-        "-o",
-        "ControlPath=/tmp/scc-carla-ssh-%r@%h:%p",
-        "-o",
-        "ControlPersist=60s",
-        settings.bastion_ssh_host,
-        f"echo '{local_hash}' > {remote_hash_file}",
-    ]
-    subprocess.run(write_hash_cmd, check=True, capture_output=True)
-    _WORKER_SYNCED = True
 
 
 def _run_bastion_ssh_action(
@@ -151,48 +158,70 @@ def _run_bastion_ssh_action(
         settings.bastion_ssh_host,
         "python3 ~/.config/scc_carla/state_worker.py",
     ]
-    res = subprocess.run(
-        cmd,
-        input=payload,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-    if res.returncode != 0:
-        err_msg = (
-            res.stderr.strip() or f"SSH process exited with code {res.returncode}"
-        )
-        raise RuntimeError(
-            f"Failed to execute Turso DB action on bastion: {err_msg}"
-        )
-    try:
-        data = json.loads(res.stdout)
-    except json.JSONDecodeError as e:
-        raise RuntimeError(
-            f"Invalid JSON response from bastion DB worker: {res.stdout}"
-        ) from e
 
-    if data.get("status") != "ok":
-        raise RuntimeError(
-            f"Bastion DB error: {data.get('error', 'unknown error')}"
+    last_err = ""
+    for attempt in range(3):
+        res = subprocess.run(
+            cmd,
+            input=payload,
+            text=True,
+            capture_output=True,
+            check=False,
         )
-    return data.get("result")
+        if res.returncode == 0:
+            try:
+                data = json.loads(res.stdout)
+                if data.get("status") == "ok":
+                    return data.get("result")
+                raise RuntimeError(
+                    f"Bastion DB error: {data.get('error', 'unknown error')}"
+                )
+            except json.JSONDecodeError:
+                last_err = f"Invalid JSON response: {res.stdout}"
+        else:
+            last_err = (
+                res.stderr.strip() or f"SSH process exited with code {res.returncode}"
+            )
+            # If control socket error, clean up socket
+            if (
+                "ControlSocket" in last_err
+                or "mux" in last_err.lower()
+                or "closed" in last_err.lower()
+            ):
+                subprocess.run(
+                    [
+                        "ssh",
+                        "-O",
+                        "exit",
+                        "-o",
+                        "ControlPath=/tmp/scc-carla-ssh-%r@%h:%p",
+                        settings.bastion_ssh_host,
+                    ],
+                    capture_output=True,
+                    check=False,
+                )
+        time.sleep(0.3 * (attempt + 1))
+
+    raise RuntimeError(
+        f"Failed to execute Turso DB action on bastion: {last_err}"
+    )
 
 
 def _dispatch_db_action(
     settings: ClusterSettings, action: str, args: dict[str, Any]
 ) -> Any:
     """Dispatches database action to bastion Turso instance directly or over SSH."""
-    if is_running_on_bastion(settings.bastion_hostname):
-        db_path = os.path.expanduser(settings.bastion_state_db_path)
-        os.makedirs(os.path.dirname(db_path), exist_ok=True)
-        conn = turso.connect(db_path)
-        try:
-            return execute_action(conn, action, args)
-        finally:
-            conn.close()
+    with _DB_THREAD_LOCK:
+        if is_running_on_bastion(settings.bastion_hostname):
+            db_path = os.path.expanduser(settings.bastion_state_db_path)
+            os.makedirs(os.path.dirname(db_path), exist_ok=True)
+            conn = turso.connect(db_path)
+            try:
+                return execute_action(conn, action, args)
+            finally:
+                conn.close()
 
-    return _run_bastion_ssh_action(settings, action, args)
+        return _run_bastion_ssh_action(settings, action, args)
 
 
 def init_db(settings: ClusterSettings) -> None:
