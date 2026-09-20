@@ -128,60 +128,19 @@ uv run scc image export --source ~/.cache/scc_carla/golden/golden-rocky-base.qco
 
 ## 🏆 Workflow 2: Bare-Metal Helvetios (Competition Cluster)
 
-Use this workflow on the physical competition cluster (dual Intel Xeon Gold 6140, HPE iLO Redfish, 100G InfiniBand).
+The physical competition cluster (dual Intel Xeon Gold 6140, HPE iLO Redfish, 100G InfiniBand) has a dedicated end-to-end guide complete with failure modes, error codes, and troubleshooting steps:
 
-### 1. Configure Bastion & Credentials
-Ensure `.env` contains your team's BMC credentials and Bastion IP:
-```bash
-cp .env.example .env
-# Edit .env:
-# SCC_BMC_USER=admin
-# SCC_BMC_PASSWORD=your_password
-# SCC_TEAM_ID=72
-```
+👉 **[Read the Full Bare-Metal Competition Guide & Troubleshooting Manual](docs/QUICKSTART_SCC_CARLA2026.md)**
 
-Ensure your `~/.ssh/config` includes the Bastion host alias:
-```ssh-config
-Host scc-bastion
-    HostName 10.7.12.101
-    User scct-2672
-    IdentityFile ~/.ssh/id_ed25519
-```
+### Fast Competition Checklist:
+1. **Credentials**: Setup `.env` (`SCC_BMC_USER`, `SCC_BMC_PASSWORD`, `SCC_TEAM_ID`) and configure SSH alias `scc-bastion`.
+2. **Workspace**: `uv run scc init --provider helvetios`
+3. **BIOS**: `uv run scc bios apply hpc`
+4. **Bootstrap**: `uv run scc up --cluster configs/clusters/helvetios-hpc.yaml`
+5. **Ansible**: `uv run scc configure`
+6. **Benchmark**: `uv run scc ssh 1` &rarr; `/shared/hpl/run_hpl.sh`
 
-### 2. Scaffold Helvetios Cluster Definition
-```bash
-uv run scc init --provider helvetios
-```
-
-### 3. Apply Redfish Workload BIOS Tuning
-Applies the competition HPC BIOS profile (Disables C-states/Hyper-Threading, enables NUMA clustering and Turbo Boost):
-```bash
-# Defaults to: all nodes [1, 2, 3], profile: hpc
-uv run scc bios apply hpc
-```
-
-### 4. Launch Automated Bare-Metal Bootstrap
-Renders the plan diff, prompts for confirmation, and starts unattended bootstrap via Redfish Virtual Media:
-```bash
-# Preview plan diff and bootstrap nodes:
-uv run scc up --cluster configs/clusters/helvetios-hpc.yaml
-```
-
-### 5. Configure HPC Stack & InfiniBand
-Deploys cluster-wide NFS over 100G InfiniBand, builds Spack environment, and compiles HPL with UCX/OpenMPI:
-```bash
-uv run scc configure
-```
-
-### 6. Run InfiniBand & HPL Residual Verification
-```bash
-# Run IB verification playbook
-uv run scc configure --playbook ansible/playbooks/verify_ib.yaml
-
-# Log into Node 1 and execute HPL benchmark
-uv run scc ssh 1
-/shared/hpl/run_hpl.sh
-```
+For in-depth troubleshooting (iLO Virtual Media errors, port 8072 conflicts, disk device detection, OpenSM subnet manager, and lease lock deadlocks), see [docs/QUICKSTART_SCC_CARLA2026.md](docs/QUICKSTART_SCC_CARLA2026.md).
 
 ---
 

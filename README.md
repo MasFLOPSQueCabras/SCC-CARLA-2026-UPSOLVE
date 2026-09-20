@@ -397,7 +397,7 @@ uv run ansible-inventory -i ansible/inventory/dynamic_inventory.py --list
 ANSIBLE_CONFIG=ansible/ansible.cfg uv run ansible-playbook -i ansible/inventory/dynamic_inventory.py --syntax-check ansible/playbooks/site.yaml ansible/playbooks/verify_ib.yaml
 
 # Verify execution plan dry-run
-uv run scc plan --cluster configs/clusters/vm-standard.yaml
+uv run scc up --dry-run --cluster configs/clusters/vm-standard.yaml
 ```
 
 ---
@@ -406,6 +406,7 @@ uv run scc plan --cluster configs/clusters/vm-standard.yaml
 
 Comprehensive architecture, hardware, and performance guides:
 
+- [Bare-Metal Competition Cluster Guide & Troubleshooting](docs/QUICKSTART_SCC_CARLA2026.md) - Dedicated runbook, failure modes, error codes, and troubleshooting manual for Helvetios.
 - [Competence Replication Guide (Libvirt to Helvetios)](docs/COMPETENCE_REPLICATION.md) - Matrix of what can be replicated locally with 100% fidelity vs physical HPC.
 - [Cluster Hardware Specifications (SPECS)](docs/SPECS.md) - Deep dive into Helvetios dual-socket Xeon Gold 6140, AVX-512 frequencies, and $R_{\text{peak}}$.
 - [InfiniBand & MPI+UCX Guide](docs/NETWORKING.md) - 100 Gbps ConnectX-5 architecture, RDMA, IPoIB, and OpenMPI/UCX tuning.
