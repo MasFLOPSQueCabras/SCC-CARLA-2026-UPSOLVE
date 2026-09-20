@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 from typing import Annotated
 
@@ -10,6 +11,7 @@ from rich.console import Console
 from rich.table import Table
 from scc_core.image import compress_zstd, convert_qcow2_to_raw, inspect_image
 
+from scc_carla.config import get_settings
 from scc_carla.paths import (
     get_golden_image_dir,
     get_image_cache_dir,
@@ -80,6 +82,136 @@ def list_images() -> None:
         console.print("[yellow]No cached images or ISOs found.[/yellow]")
     else:
         console.print(table)
+
+
+@image_app.command("build")
+def build_cmd(
+    source: Annotated[
+        Path | None,
+        typer.Option(
+            "--source",
+            "-s",
+            help="Source disk image (.qcow2, .raw) or installed VM disk to convert to golden base",
+        ),
+    ] = None,
+    output: Annotated[
+        Path | None,
+        typer.Option(
+            "--output",
+            "-o",
+            help="Target golden base image path (defaults to ~/.cache/scc_carla/golden/golden-rocky-base.qcow2)",
+        ),
+    ] = None,
+    from_installed: Annotated[
+        Path | None,
+        typer.Option(
+            "--from-installed",
+            help="Capture an existing installed VM disk into the golden base",
+        ),
+    ] = None,
+    compress: Annotated[
+        bool,
+        typer.Option(
+            "--compress/--no-compress",
+            "-c",
+            help="Enable QCOW2 internal compression",
+        ),
+    ] = True,
+    force: Annotated[
+        bool,
+        typer.Option(
+            "--force",
+            "-f",
+            help="Overwrite existing golden image if present",
+        ),
+    ] = False,
+) -> None:
+    """Build or capture a pristine golden QCOW2 base image for zero-install cluster deployments."""
+    golden_dir = get_golden_image_dir()
+    golden_dir.mkdir(parents=True, exist_ok=True)
+    target = (
+        output.expanduser().resolve()
+        if output
+        else (golden_dir / "golden-rocky-base.qcow2")
+    )
+
+    if target.exists() and not force:
+        console.print(
+            f"[yellow]Golden image already exists at [bold]{target}[/bold].[/yellow]\n"
+            "Use [bold]--force[/bold] / [bold]-f[/bold] to rebuild/overwrite."
+        )
+        meta = inspect_image(target)
+        console.print(
+            f"[dim]Format: {meta.format} | Virtual Size: {_format_bytes(meta.virtual_size_bytes)} | Allocation: {_format_bytes(meta.actual_size_bytes)}[/dim]"
+        )
+        return
+
+    # Determine source image
+    src_cand: Path | None = None
+    if from_installed:
+        src_cand = from_installed.expanduser().resolve()
+    elif source:
+        src_cand = source.expanduser().resolve()
+    else:
+        # Check cached cloud base image first
+        settings = get_settings()
+        cloud_cand = get_image_cache_dir() / settings.cloud_image_name
+        if cloud_cand.exists():
+            src_cand = cloud_cand
+        else:
+            img_dir = get_image_cache_dir()
+            if img_dir.exists():
+                qcow2_files = [
+                    p
+                    for p in sorted(img_dir.iterdir())
+                    if p.suffix == ".qcow2" and not p.name.startswith(".")
+                ]
+                if qcow2_files:
+                    src_cand = qcow2_files[0]
+
+        if src_cand is None:
+            iso_dir = get_iso_cache_dir()
+            if iso_dir.exists():
+                iso_files = [
+                    p
+                    for p in sorted(iso_dir.iterdir())
+                    if p.suffix == ".iso" and not p.name.startswith(".")
+                ]
+                if iso_files:
+                    src_cand = iso_files[0]
+
+    if src_cand is None or not src_cand.exists():
+        console.print(
+            "[bold red]No valid source image found to build golden base.[/bold red]\n"
+            "Please provide a source with [bold]--source <path>[/bold] or [bold]--from-installed <path>[/bold]."
+        )
+        raise typer.Exit(code=1)
+
+    console.print(
+        f"[cyan]Building golden base image from [bold]{src_cand.name}[/bold] -> [bold]{target.name}[/bold]...[/cyan]"
+    )
+
+    cmd = ["qemu-img", "convert", "-O", "qcow2"]
+    if compress:
+        cmd.append("-c")
+    cmd.extend([str(src_cand), str(target)])
+
+    try:
+        subprocess.run(cmd, check=True)
+        try:
+            target.chmod(0o644)
+        except OSError:
+            pass
+        console.print(
+            f"[bold green]✓ Successfully built golden base image: {target}[/bold green]"
+        )
+        meta = inspect_image(target)
+        console.print(
+            f"[dim]Format: {meta.format} | Virtual Size: {_format_bytes(meta.virtual_size_bytes)} | Allocation: {_format_bytes(meta.actual_size_bytes)}[/dim]"
+        )
+    except subprocess.CalledProcessError as e:
+        console.print(f"[bold red]Image build failed: {e}[/bold red]")
+        raise typer.Exit(code=1) from e
 
 
 @image_app.command("inspect")

@@ -5,6 +5,7 @@ from typing import Any
 
 import libvirt
 from scc_core.manifest.models import ClusterManifest, NodeSpec, VMSpec
+from scc_core.oemdrv import generate_oemdrv
 from scc_core.providers.base import NodeProvider, PowerState, ProviderPaths
 from scc_core.templating import TemplateEngine
 
@@ -161,6 +162,7 @@ class LibvirtProvider(NodeProvider):
         dom_name = self._get_domain_name(node_id)
         disk_path = self.storage_dir / f"{dom_name}.qcow2"
 
+        self.storage_dir.mkdir(parents=True, exist_ok=True)
         try:
             self.storage_dir.chmod(0o777)
         except OSError:
@@ -177,24 +179,28 @@ class LibvirtProvider(NodeProvider):
             else (self.manifest.defaults.vm if self.manifest else VMSpec())
         )
 
+        is_boot_iso = bool(iso_path and not is_qcow2_image(iso_path))
         image_path = kwargs.get("image_path")
         cloud_base_image = None
-        if image_path and is_qcow2_image(image_path):
-            cloud_base_image = Path(image_path)
-        elif iso_path and is_qcow2_image(iso_path):
-            cloud_base_image = Path(iso_path)
-        else:
-            golden_cand = (
-                Path.home()
-                / ".cache"
-                / "scc_carla"
-                / "golden"
-                / "golden-rocky-base.qcow2"
-            )
-            if golden_cand.exists():
-                cloud_base_image = golden_cand
+
+        if not is_boot_iso:
+            if image_path and is_qcow2_image(image_path):
+                cloud_base_image = Path(image_path)
+            elif iso_path and is_qcow2_image(iso_path):
+                cloud_base_image = Path(iso_path)
+            else:
+                golden_cand = (
+                    Path.home()
+                    / ".cache"
+                    / "scc_carla"
+                    / "golden"
+                    / "golden-rocky-base.qcow2"
+                )
+                if golden_cand.exists():
+                    cloud_base_image = golden_cand
 
         overlay_size = f"{vm_spec.disk.size_gb}G"
+        oemdrv_iso_str: str | None = None
 
         if cloud_base_image is not None:
             create_cow_overlay(
@@ -247,6 +253,21 @@ class LibvirtProvider(NodeProvider):
             )
             cidata_iso_path = None
 
+            oemdrv_cand = kwargs.get("oemdrv_path")
+            if oemdrv_cand:
+                oemdrv_iso_str = str(Path(oemdrv_cand).resolve())
+            elif is_boot_iso and ks_cfg_path and Path(ks_cfg_path).exists():
+                oemdrv_target = self.storage_dir / f"{dom_name}_oemdrv.img"
+                try:
+                    generate_oemdrv(
+                        Path(ks_cfg_path),
+                        oemdrv_target,
+                        template_engine=self.template_engine,
+                    )
+                    oemdrv_iso_str = str(oemdrv_target.resolve())
+                except subprocess.CalledProcessError, OSError:
+                    oemdrv_iso_str = None
+
         mac_address = spec.mac if spec else f"52:54:00:72:01:0{node_id}"
         net_bridge = (
             self.manifest.network.bridge
@@ -260,13 +281,11 @@ class LibvirtProvider(NodeProvider):
         ):
             net_bridge = self.manifest.network.bridge
 
-        is_boot_iso = bool(iso_path and not is_qcow2_image(iso_path))
-        install_iso_str = str(Path(iso_path).resolve()) if is_boot_iso else None
-        oemdrv_iso_str = (
-            str(Path(kwargs["oemdrv_path"]).resolve())
-            if kwargs.get("oemdrv_path")
-            else None
+        install_iso_str = (
+            str(Path(iso_path).resolve()) if is_boot_iso and iso_path else None
         )
+        if kwargs.get("oemdrv_path"):
+            oemdrv_iso_str = str(Path(kwargs["oemdrv_path"]).resolve())
 
         domain_context = {
             "domain_name": dom_name,

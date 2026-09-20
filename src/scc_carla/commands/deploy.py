@@ -28,7 +28,11 @@ from scc_carla.iso import ensure_cached_iso
 from scc_carla.nodes import resolve_target_nodes
 from scc_carla.oemdrv import generate_oemdrv
 from scc_carla.ops import cluster_lock
-from scc_carla.paths import get_image_cache_dir, get_iso_cache_dir
+from scc_carla.paths import (
+    get_golden_image_dir,
+    get_image_cache_dir,
+    get_iso_cache_dir,
+)
 from scc_carla.providers.base import NodeProvider
 from scc_carla.providers.bmc import BMCProvider
 from scc_carla.providers.chameleon import ChameleonProvider
@@ -231,9 +235,12 @@ def _provision_single_node(
             )
             chosen_img = image_source or iso_source
             if chosen_img is None:
+                cached_golden = get_golden_image_dir() / "golden-rocky-base.qcow2"
                 cached_cloud = get_image_cache_dir() / settings.cloud_image_name
                 cached_iso = get_iso_cache_dir() / settings.iso_name
-                if cached_cloud.exists():
+                if cached_golden.exists():
+                    chosen_img = str(cached_golden)
+                elif cached_cloud.exists():
                     chosen_img = str(cached_cloud)
                 elif cached_iso.exists():
                     chosen_img = str(cached_iso)

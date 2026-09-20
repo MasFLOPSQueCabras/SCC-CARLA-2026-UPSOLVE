@@ -1,8 +1,7 @@
-"""OEMDRV generation re-exports.
+"""OEMDRV generation re-exports."""
 
-Consolidates under `scc_provider_helvetios.oemdrv` to eliminate code duplication.
-"""
+from __future__ import annotations
 
-from scc_provider_helvetios.oemdrv import generate_oemdrv
+from scc_core.oemdrv import generate_oemdrv
 
 __all__ = ["generate_oemdrv"]

@@ -50,6 +50,9 @@ def ensure_cached_cloud_image(
                 f"Specified cloud image source file not found: {file_path}"
             )
 
+        if file_path == cache_path or file_path.name == "golden-rocky-base.qcow2":
+            return file_path
+
         needs_copy = (
             not cache_path.exists()
             or cache_path.stat().st_size != file_path.stat().st_size

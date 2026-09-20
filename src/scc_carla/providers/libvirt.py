@@ -10,6 +10,7 @@ from scc_carla.config import ClusterSettings
 from scc_carla.image import create_cow_overlay, is_qcow2_image
 from scc_carla.oemdrv import generate_oemdrv
 from scc_carla.paths import (
+    get_golden_image_dir,
     get_iso_cache_dir,
     get_libvirt_storage_dir,
     get_local_db_path,
@@ -183,6 +184,7 @@ class LibvirtProvider(NodeProvider):
         dom_name = self._get_domain_name(node_id)
         disk_path = self.storage_dir / f"{dom_name}.qcow2"
 
+        self.storage_dir.mkdir(parents=True, exist_ok=True)
         # Ensure storage directory permissions for QEMU process
         try:
             self.storage_dir.chmod(0o777)
@@ -194,12 +196,18 @@ class LibvirtProvider(NodeProvider):
         if dom is not None:
             self.teardown_node(node_id)
 
+        is_boot_iso = bool(iso_path and not is_qcow2_image(iso_path))
         image_path: Path | None = kwargs.get("image_path")
         cloud_base_image: Path | None = None
-        if image_path and is_qcow2_image(image_path):
-            cloud_base_image = image_path
-        elif iso_path and is_qcow2_image(iso_path):
-            cloud_base_image = iso_path
+        if not is_boot_iso:
+            if image_path and is_qcow2_image(image_path):
+                cloud_base_image = image_path
+            elif iso_path and is_qcow2_image(iso_path):
+                cloud_base_image = iso_path
+            else:
+                golden_cand = get_golden_image_dir() / "golden-rocky-base.qcow2"
+                if golden_cand.exists():
+                    cloud_base_image = golden_cand
 
         cdrom_path: Path | None = None
         aux_drive_path: Path | None = None
