@@ -20,9 +20,14 @@ flowchart TD
         N3["Node 3 (10.2.72.3)<br/>iLO BMC: 10.1.72.3<br/>100G IB: 10.10.72.3 (NFS Client)"]
     end
 
-    AUTH -->|iLO Redfish HTTPS| N1 & N2 & N3
-    HTTP -->|Virtual Media Boot (ISO + OEMDRV)| N1 & N2 & N3
-    N1 <===>|100G EDR InfiniBand RDMA| N2 & N3
+    AUTH -->|"iLO Redfish HTTPS"| N1
+    AUTH -->|"iLO Redfish HTTPS"| N2
+    AUTH -->|"iLO Redfish HTTPS"| N3
+    HTTP -->|"Virtual Media Boot (ISO + OEMDRV)"| N1
+    HTTP -->|"Virtual Media Boot (ISO + OEMDRV)"| N2
+    HTTP -->|"Virtual Media Boot (ISO + OEMDRV)"| N3
+    N1 <===>|"100G EDR InfiniBand RDMA"| N2
+    N1 <===>|"100G EDR InfiniBand RDMA"| N3
 ```
 
 ---
