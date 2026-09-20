@@ -117,22 +117,23 @@ uv run scc cluster validate values.yaml
 
 ---
 
-### 3. Execution Plan & Drift Diff (`plan`)
+### 3. Integrated Execution Plan & Drift Diff (`up --dry-run` & `down --dry-run`)
 
-Like `terraform plan`, computes a declarative preview comparing declared configuration (`values.yaml` or `--cluster <path>`) against live observed state across hypervisor/BMC, database, and operational locks:
+`scc-carla` integrates planning directly into `scc up` and `scc down`. Like `terraform apply`, running `scc up` or `scc down` automatically computes and renders a declarative preview comparing declared configuration (`values.yaml` or `--cluster <path>`) against live observed state across hypervisor/BMC, database, and operational locks, prompting for confirmation before making changes:
 
 ```bash
-# Generate execution plan for active workspace (values.yaml)
-uv run scc plan
+# Preview startup execution plan and prompt for confirmation:
+uv run scc up
 
-# Generate execution plan for generic portable Libvirt cluster
-uv run scc plan --cluster configs/clusters/vm-standard.yaml
+# Inspect startup diff without making changes (dry-run):
+uv run scc up --dry-run
+uv run scc up --dry-run --cluster configs/clusters/helvetios-hpc.yaml
 
-# Generate execution plan for hardware-optimized Libvirt cluster
-uv run scc plan --cluster configs/clusters/vm-hw-optimized.yaml
+# Auto-approve startup without interactive prompt:
+uv run scc up --yes
 
-# Generate execution plan for physical Helvetios bare-metal cluster
-uv run scc plan --cluster configs/clusters/helvetios-hpc.yaml
+# Preview teardown execution plan (shows nodes to stop and disks to drop):
+uv run scc down --dry-run
 ```
 
 **Example Plan Output:**
@@ -331,6 +332,23 @@ uv run scc down
 
 # Reset cluster database states back to UNPROVISIONED
 uv run scc down -a --reset-db
+```
+
+---
+
+### 12. Golden Image & Streaming Pipeline (`image`)
+
+Eliminates repeated 15-minute unattended OS installations by caching golden base images and streaming raw disk blocks:
+
+```bash
+# List all cached ISOs, base cloud images, and golden images
+uv run scc image list
+
+# Inspect detailed image allocation, virtual size, and format
+uv run scc image inspect ~/.cache/scc_carla/images/Rocky-10-GenericCloud-Base.latest.x86_64.qcow2
+
+# Export and compress a QCOW2 golden image to .raw.zst for Bastion HTTP streaming
+uv run scc image export --source ~/.cache/scc_carla/golden/golden-rocky-base.qcow2
 ```
 
 ---

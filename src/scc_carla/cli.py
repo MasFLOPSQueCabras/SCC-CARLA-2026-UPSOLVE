@@ -7,8 +7,8 @@ from scc_carla.commands.cluster import init as cluster_init
 from scc_carla.commands.configure import configure_cli
 from scc_carla.commands.deploy import deploy_cli
 from scc_carla.commands.down import down_cli
+from scc_carla.commands.image import image_app
 from scc_carla.commands.lock import lock_app
-from scc_carla.commands.plan import plan_cli
 from scc_carla.commands.power import power_app
 from scc_carla.commands.ssh import ssh_cli
 from scc_carla.commands.status import status_cli
@@ -24,6 +24,7 @@ app = typer.Typer(
 
 # Mount modular sub-apps
 app.add_typer(cluster_app, name="cluster")
+app.add_typer(image_app, name="image")
 app.add_typer(power_app, name="power")
 app.add_typer(bios_app, name="bios")
 app.add_typer(lock_app, name="lock")
@@ -33,10 +34,6 @@ app.command(
     "init",
     help="Initialize a cluster workspace with values.yaml and provider templates",
 )(cluster_init)
-app.command(
-    "plan",
-    help="Show cluster execution plan, resource drift, and operations diff",
-)(plan_cli)
 app.command("up", help="Provision cluster node OS and run configuration in parallel")(
     up_cli
 )

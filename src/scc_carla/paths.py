@@ -61,6 +61,13 @@ def get_libvirt_storage_dir() -> Path:
     return p
 
 
+def get_golden_image_dir() -> Path:
+    """Returns directory for golden base images (~/.cache/scc_carla/golden)."""
+    p = get_cache_dir() / "golden"
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
 def get_local_db_path() -> Path:
     """Returns local SQLite database path (~/.local/state/scc_carla/local_state.db).
 

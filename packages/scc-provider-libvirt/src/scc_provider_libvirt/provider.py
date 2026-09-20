@@ -183,6 +183,16 @@ class LibvirtProvider(NodeProvider):
             cloud_base_image = Path(image_path)
         elif iso_path and is_qcow2_image(iso_path):
             cloud_base_image = Path(iso_path)
+        else:
+            golden_cand = (
+                Path.home()
+                / ".cache"
+                / "scc_carla"
+                / "golden"
+                / "golden-rocky-base.qcow2"
+            )
+            if golden_cand.exists():
+                cloud_base_image = golden_cand
 
         overlay_size = f"{vm_spec.disk.size_gb}G"
 
@@ -229,7 +239,7 @@ class LibvirtProvider(NodeProvider):
             )
             cidata_iso_path = cidata_target
         else:
-            # Fallback blank disk
+            # Fallback blank disk for clean ISO installation
             subprocess.run(
                 ["qemu-img", "create", "-f", "qcow2", str(disk_path), overlay_size],
                 check=True,
@@ -250,6 +260,14 @@ class LibvirtProvider(NodeProvider):
         ):
             net_bridge = self.manifest.network.bridge
 
+        is_boot_iso = bool(iso_path and not is_qcow2_image(iso_path))
+        install_iso_str = str(Path(iso_path).resolve()) if is_boot_iso else None
+        oemdrv_iso_str = (
+            str(Path(kwargs["oemdrv_path"]).resolve())
+            if kwargs.get("oemdrv_path")
+            else None
+        )
+
         domain_context = {
             "domain_name": dom_name,
             "memory_mb": vm_spec.memory_mb,
@@ -267,6 +285,9 @@ class LibvirtProvider(NodeProvider):
             "disk_target": "sda" if vm_spec.disk.bus == "scsi" else "vda",
             "disk_bus": vm_spec.disk.bus,
             "cidata_iso": str(cidata_iso_path.resolve()) if cidata_iso_path else None,
+            "install_iso": install_iso_str,
+            "oemdrv_iso": oemdrv_iso_str,
+            "boot_dev": "cdrom" if is_boot_iso else "hd",
             "network_bridge": net_bridge,
             "network_name": self.manifest.network.network_name
             if self.manifest

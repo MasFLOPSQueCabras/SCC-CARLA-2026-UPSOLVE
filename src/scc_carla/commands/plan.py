@@ -9,7 +9,6 @@ from __future__ import annotations
 import contextlib
 from enum import StrEnum
 from pathlib import Path
-from typing import Annotated
 
 import typer
 from rich.console import Console
@@ -322,17 +321,3 @@ def _plan_helvetios_node(
             ActionType.UPDATE,
         )
         counts[ActionType.UPDATE] += 1
-
-
-def plan_cli(
-    cluster: Annotated[
-        Path | None,
-        typer.Option(
-            "--cluster",
-            "-c",
-            help="Path to cluster manifest or values.yaml override file",
-        ),
-    ] = None,
-) -> None:
-    """Show what operations and resource changes will be performed (Terraform plan)."""
-    plan_command(cluster_path=cluster)

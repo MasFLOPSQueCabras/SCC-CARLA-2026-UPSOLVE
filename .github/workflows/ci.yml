@@ -128,4 +128,5 @@ jobs:
 
       - name: Verify cluster execution plan (Generic Libvirt)
         run: |
-          uv run scc-carla plan --cluster configs/clusters/vm-standard.yaml
+          uv run scc-carla up --dry-run --cluster configs/clusters/vm-standard.yaml
+          uv run scc-carla down --dry-run --cluster configs/clusters/vm-standard.yaml

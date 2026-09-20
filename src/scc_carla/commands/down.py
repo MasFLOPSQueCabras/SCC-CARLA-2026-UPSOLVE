@@ -89,6 +89,81 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
+from rich.panel import Panel
+from rich.table import Table
+
+
+def render_teardown_plan(
+    settings: ClusterSettings,
+    targets: list[int],
+    reset_db: bool = False,
+    provider: str | None = None,
+) -> None:
+    """Computes and displays a teardown execution plan showing what resources will be affected."""
+    selected_provider = provider or settings.provider
+    console.print(
+        Panel.fit(
+            f"[bold cyan]Action:[/bold cyan] Teardown & Decommission\n"
+            f"[bold cyan]Target Nodes:[/bold cyan] {targets} ({len(targets)} node(s))\n"
+            f"[bold cyan]Provider:[/bold cyan] {selected_provider} | "
+            f"[bold cyan]Reset Database:[/bold cyan] {reset_db}",
+            title="[bold red]SCC Cluster Teardown Plan[/bold red]",
+            border_style="red",
+        )
+    )
+
+    table = Table(
+        title="Resources Scheduled for Teardown",
+        show_header=True,
+        header_style="bold magenta",
+    )
+    table.add_column("Resource", style="bold", min_width=20)
+    table.add_column("Type", style="dim", min_width=14)
+    table.add_column("Current State", min_width=24)
+    table.add_column("Target State", min_width=24)
+    table.add_column("Action", justify="center", min_width=12)
+
+    for n in targets:
+        hostname = settings.get_hostname(n)
+        table.add_row(
+            f"Node '{hostname}'",
+            "Compute Node",
+            "Active / Provisioned",
+            "Powered Off & Decommissioned",
+            "[bold red]- DESTROY[/bold red]",
+        )
+        if selected_provider in ("vm", "libvirt"):
+            table.add_row(
+                f"Disk Overlay '{hostname}.qcow2'",
+                "CoW Storage",
+                "Allocated overlay",
+                "Teardown / Discarded",
+                "[bold red]- DESTROY[/bold red]",
+            )
+
+    table.add_row(
+        "Database Node States",
+        "Turso DB",
+        "Current lifecycle",
+        "RESET TO UNPROVISIONED" if reset_db else "OFFLINE",
+        "[bold yellow]~ UPDATE[/bold yellow]",
+    )
+
+    table.add_row(
+        "Cluster Locks",
+        "Lock",
+        "Exclusive lease for teardown",
+        "Released (Unlocked)",
+        "[bold cyan]* TASK[/bold cyan]",
+    )
+
+    console.print(table)
+    console.print(
+        f"\n[bold]Teardown Plan:[/bold] "
+        f"[red]{len(targets) * (2 if selected_provider in ('vm', 'libvirt') else 1)} to destroy/stop[/red], "
+        f"[yellow]1 database state update[/yellow], "
+        f"[cyan]1 operational task[/cyan].\n"
+    )
 
 
 def down_cli(
@@ -129,8 +204,23 @@ def down_cli(
             help="Path to cluster manifest or values.yaml override file",
         ),
     ] = None,
+    yes: Annotated[
+        bool,
+        typer.Option(
+            "--yes",
+            "-y",
+            help="Automatically approve teardown plan without interactive confirmation",
+        ),
+    ] = False,
+    dry_run: Annotated[
+        bool,
+        typer.Option(
+            "--dry-run",
+            help="Show teardown plan diff and exit without applying changes",
+        ),
+    ] = False,
 ) -> None:
-    """Tear down and decommission cluster node(s)."""
+    """Preview teardown plan, prompt for confirmation, and decommission cluster node(s)."""
     from scc_core.manifest import load_manifest
 
     from scc_carla.config import get_settings
@@ -145,9 +235,32 @@ def down_cli(
         if provider is None:
             provider = manifest.provider
 
+    try:
+        targets = resolve_target_nodes(node)
+    except ValueError as e:
+        console.print(f"[bold red]{e}[/bold red]")
+        raise typer.Exit(code=1) from e
+
+    # 1. Render teardown plan
+    render_teardown_plan(settings, targets, reset_db=reset_db, provider=provider)
+
+    if dry_run:
+        console.print("[dim]Dry run complete. No resources were modified.[/dim]")
+        raise typer.Exit(code=0)
+
+    # 2. Prompt for explicit confirmation
+    if not yes:
+        confirmed = typer.confirm(
+            f"Are you sure you want to shut down and tear down {len(targets)} node(s)?",
+            default=False,
+        )
+        if not confirmed:
+            console.print("[yellow]Aborted by user.[/yellow]")
+            raise typer.Exit(code=0)
+
     down_command(
         settings,
-        node=node,
+        node=targets,
         reset_db=reset_db,
         force_lock=force_lock,
         provider=provider,

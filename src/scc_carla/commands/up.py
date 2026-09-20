@@ -210,10 +210,26 @@ def up_cli(
             help="Path to cluster manifest or values.yaml override file",
         ),
     ] = None,
+    yes: Annotated[
+        bool,
+        typer.Option(
+            "--yes",
+            "-y",
+            help="Automatically approve execution plan without interactive confirmation",
+        ),
+    ] = False,
+    dry_run: Annotated[
+        bool,
+        typer.Option(
+            "--dry-run",
+            help="Show cluster execution plan diff and exit without applying changes",
+        ),
+    ] = False,
 ) -> None:
-    """Provision cluster node OS and run configuration in parallel."""
+    """Preview cluster execution plan, prompt for confirmation, and provision cluster."""
     from scc_core.manifest import load_manifest
 
+    from scc_carla.commands.plan import plan_command
     from scc_carla.config import get_settings
 
     settings = get_settings()
@@ -230,6 +246,23 @@ def up_cli(
                 manifest.defaults.os.cloud_image_source
                 or manifest.defaults.os.cloud_image
             )
+
+    # 1. Render execution plan diff
+    plan_command(cluster_path=manifest_file, settings=settings)
+
+    if dry_run:
+        console.print("[dim]Dry run complete. No changes were applied.[/dim]")
+        raise typer.Exit(code=0)
+
+    # 2. Prompt for explicit confirmation
+    if not yes:
+        confirmed = typer.confirm(
+            "Do you want to perform these actions and start the cluster?",
+            default=True,
+        )
+        if not confirmed:
+            console.print("[yellow]Aborted by user.[/yellow]")
+            raise typer.Exit(code=0)
 
     up_command(
         settings,

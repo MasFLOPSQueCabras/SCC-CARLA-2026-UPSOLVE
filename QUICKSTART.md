@@ -10,7 +10,8 @@ When executing commands without explicit flags, `scc-carla` applies the followin
 
 | Operation / Flag | Default Behavior | Overriding Flag |
 |---|---|---|
-| **Cluster Manifest** (`scc plan`, `validate`) | Searches `./values.yaml` in current working directory &rarr; repo `values.yaml` &rarr; `configs/clusters/vm-standard.yaml` | `-c`, `--cluster <path>` |
+| **Execution & Teardown Plan** (`scc up`, `down`) | **Renders plan diff & prompts for explicit confirmation** | `--yes` / `-y` (auto-approve), `--dry-run` (preview diff only) |
+| **Cluster Manifest** (`scc up`, `validate`) | Searches `./values.yaml` in current working directory &rarr; repo `values.yaml` &rarr; `configs/clusters/vm-standard.yaml` | `-c`, `--cluster <path>` |
 | **Target Nodes** (`scc up`, `down`, `status`, `power`) | **All 3 nodes: `[1, 2, 3]`** | `-n`, `--node <id>` (e.g. `-n 1`, `-n 1 -n 2`) |
 | **SSH Target** (`scc ssh`) | **Node 1** (`node1` at `10.2.72.1` / `192.168.122.101`) | `<target>` (e.g. `scc ssh 2`, `scc ssh bastion`) |
 | **Provider** (`scc init`) | **`vm`** (Local KVM/QEMU via Libvirt) | `-P`, `--provider <vm\|helvetios>` |
@@ -52,34 +53,32 @@ Scaffolds a customized `values.yaml` and stages provider templates into `./templ
 uv run scc init
 ```
 
-### 2. Preview Execution Plan (Diff)
-Preview the declarative changes against your local environment (like `terraform plan`):
+### 2. Preview Plan & Spin Up VMs
+`scc up` automatically renders a Terraform-like declarative diff table showing what resources will be created (`+ CREATE`), updated (`~ UPDATE`), or performed (`* TASK`), and requests explicit confirmation:
 ```bash
-# Defaults to: ./values.yaml
-uv run scc plan
-```
-*Outputs table indicating resources to `+ CREATE`, `~ UPDATE`, `* TASK`, or `= NOOP`.*
-
-### 3. Spin Up VMs in Parallel
-Provisions all virtual machines, generates Cloud-Init CIDATA FAT drives, creates CoW overlays, and starts domains concurrently:
-```bash
-# Defaults to: all nodes [1, 2, 3]
+# Preview plan diff and prompt for confirmation:
 uv run scc up
+
+# Or preview diff without making any changes:
+uv run scc up --dry-run
+
+# Or run non-interactively (ideal for scripts & CI):
+uv run scc up --yes
 ```
 
-### 4. Check Cluster Health & Telemetry
+### 3. Check Cluster Health & Telemetry
 Probes live hypervisor state, SSH accessibility, and Turso state database in parallel:
 ```bash
 uv run scc status
 ```
 
-### 5. Apply Post-Provisioning Configuration
+### 4. Apply Post-Provisioning Configuration
 Executes the full Ansible automation suite (NFS, Spack, HPC kernel tuning, HPL):
 ```bash
 uv run scc configure
 ```
 
-### 6. Connect to Nodes
+### 5. Connect to Nodes
 ```bash
 # Defaults to Node 1
 uv run scc ssh
@@ -88,13 +87,41 @@ uv run scc ssh
 uv run scc ssh 2
 ```
 
-### 7. Clean Teardown
+### 6. Clean Teardown with Plan Diff
+`scc down` computes the teardown impact, shows which nodes will stop and which disk overlays will be discarded, and prompts for confirmation:
 ```bash
-# Gracefully power off all nodes (preserves disk overlays)
+# Preview teardown plan and prompt:
 uv run scc down
 
-# Or completely destroy and delete CoW disk images
-uv run scc down --purge
+# Preview teardown diff only:
+uv run scc down --dry-run
+
+# Auto-approve teardown and delete CoW disk images:
+uv run scc down --purge --yes
+```
+
+---
+
+## ⚡ Zero-Install Teardowns (Golden Image Pipeline)
+
+In the competition, reinstalling from the minimal bootable ISO via Anaconda takes **10–15 minutes per node**. To eliminate this bottleneck, `scc-carla` implements a **Golden Image & Streaming Pipeline**:
+
+### 1. How It Works
+- **First Run**: Install the OS once from the minimal bootable ISO (or automated via Libvirt).
+- **Subsequent Teardowns**:
+  - **Local Libvirt**: When you run `scc down --purge`, only the ephemeral child CoW overlay (`nodeX.qcow2`) is discarded. On `scc up`, a fresh CoW overlay is created on top of `golden-rocky-base.qcow2` in **< 2 seconds**. Zero package re-installations!
+  - **Bare-Metal Helvetios**: An optimized raw compressed block image (`golden-rocky-base.raw.zst`, ~1.1 GB) is streamed directly to NVMe (`curl | zstd -d | dd of=/dev/nvme0n1`) via Bastion HTTP in **30–45 seconds**, completely bypassing the 450+ sequential RPM installation phase.
+
+### 2. Image Management Commands
+```bash
+# List cached ISOs, base cloud images, and golden images
+uv run scc image list
+
+# Inspect detailed image virtual size, allocation, and format
+uv run scc image inspect ~/.cache/scc_carla/images/Rocky-10-GenericCloud-Base.latest.x86_64.qcow2
+
+# Export QCOW2 golden image to compressed raw stream for Bastion HTTP server
+uv run scc image export --source ~/.cache/scc_carla/golden/golden-rocky-base.qcow2
 ```
 
 ---
@@ -126,32 +153,27 @@ Host scc-bastion
 uv run scc init --provider helvetios
 ```
 
-### 3. Review Execution Plan
-```bash
-uv run scc plan --cluster configs/clusters/helvetios-hpc.yaml
-```
-
-### 4. Apply Redfish Workload BIOS Tuning
+### 3. Apply Redfish Workload BIOS Tuning
 Applies the competition HPC BIOS profile (Disables C-states/Hyper-Threading, enables NUMA clustering and Turbo Boost):
 ```bash
 # Defaults to: all nodes [1, 2, 3], profile: hpc
 uv run scc bios apply hpc
 ```
 
-### 5. Launch Automated Bare-Metal Bootstrap
-Generates unattended OEMDRV driver disks, starts the ephemeral HTTP Range server on the Bastion, boots via Redfish Virtual Media, and waits for SSH:
+### 4. Launch Automated Bare-Metal Bootstrap
+Renders the plan diff, prompts for confirmation, and starts unattended bootstrap via Redfish Virtual Media:
 ```bash
-# Defaults to: all nodes [1, 2, 3]
-uv run scc up
+# Preview plan diff and bootstrap nodes:
+uv run scc up --cluster configs/clusters/helvetios-hpc.yaml
 ```
 
-### 6. Configure HPC Stack & InfiniBand
+### 5. Configure HPC Stack & InfiniBand
 Deploys cluster-wide NFS over 100G InfiniBand, builds Spack environment, and compiles HPL with UCX/OpenMPI:
 ```bash
 uv run scc configure
 ```
 
-### 7. Run InfiniBand & HPL Residual Verification
+### 6. Run InfiniBand & HPL Residual Verification
 ```bash
 # Run IB verification playbook
 uv run scc configure --playbook ansible/playbooks/verify_ib.yaml
@@ -165,13 +187,15 @@ uv run scc ssh 1
 
 ## 📋 CLI Daily Cheat Sheet
 
-| Command | Description | Example Default Invocation | Explicit Targeting |
+| Command | Description | Example Invocation | Explicit Targeting |
 |---|---|---|---|
 | `scc status` | Inspect real-time cluster state & power | `uv run scc status` | `uv run scc status --no-probe` |
-| `scc plan` | Terraform-like dry-run diff | `uv run scc plan` | `uv run scc plan -c configs/clusters/vm-hw-optimized.yaml` |
+| `scc up` | Plan & provision cluster nodes | `uv run scc up` *(interactive)* | `uv run scc up --yes -n 1 -n 2` |
+| `scc up --dry-run` | Preview execution plan diff only | `uv run scc up --dry-run` | `uv run scc up --dry-run -c configs/clusters/helvetios-hpc.yaml` |
+| `scc down` | Plan & decommission cluster nodes | `uv run scc down` *(interactive)* | `uv run scc down --purge --yes -n 3` |
+| `scc down --dry-run`| Preview teardown plan diff only | `uv run scc down --dry-run` | `uv run scc down --dry-run --reset-db` |
 | `scc init` | Author new cluster workspace | `uv run scc init` | `uv run scc init -P helvetios -d ./my-cluster` |
-| `scc up` | Provision OS and start nodes | `uv run scc up` | `uv run scc up -n 1 -n 2` |
-| `scc down` | Power off or decommission nodes | `uv run scc down` | `uv run scc down -n 3 --purge` |
+| `scc image` | Manage golden images & streaming | `uv run scc image list` | `uv run scc image export -s image.qcow2` |
 | `scc power` | Power control via BMC / Libvirt | `uv run scc power on` | `uv run scc power reboot -n 2` |
 | `scc bios` | Inspect or apply Redfish BIOS profile | `uv run scc bios status` | `uv run scc bios apply hpc -n 1` |
 | `scc configure` | Execute Ansible configuration | `uv run scc configure` | `uv run scc configure --tags infiniband,nfs` |

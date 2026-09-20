@@ -224,18 +224,3 @@ def list_clusters() -> None:
             table.add_row("./values.yaml (active)", m.provider, m.description)
 
     console.print(table)
-
-
-@cluster_app.command("plan")
-def cluster_plan(
-    manifest_path: Annotated[
-        Path | None,
-        typer.Argument(
-            help="Path to cluster manifest or values.yaml to plan (default: values.yaml)",
-        ),
-    ] = None,
-) -> None:
-    """Show what operations and resource changes will be performed (Terraform plan)."""
-    from scc_carla.commands.plan import plan_command
-
-    plan_command(cluster_path=manifest_path)

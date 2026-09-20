@@ -46,6 +46,22 @@
       <readonly/>
     </disk>
     {% endif %}
+    {% if install_iso %}
+    <disk type='file' device='cdrom'>
+      <driver name='qemu' type='raw'/>
+      <source file='{{ install_iso }}'/>
+      <target dev='sdc' bus='sata'/>
+      <readonly/>
+    </disk>
+    {% endif %}
+    {% if oemdrv_iso %}
+    <disk type='file' device='disk'>
+      <driver name='qemu' type='raw'/>
+      <source file='{{ oemdrv_iso }}'/>
+      <target dev='sdd' bus='usb'/>
+      <readonly/>
+    </disk>
+    {% endif %}
     {% if network_bridge %}
     <interface type='bridge'>
       <source bridge='{{ network_bridge }}'/>
