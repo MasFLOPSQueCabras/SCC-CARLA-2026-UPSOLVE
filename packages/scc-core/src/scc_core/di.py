@@ -1,7 +1,5 @@
 """Lightweight Dependency Injection (DI) and Lazy Provider Registry."""
 
-from __future__ import annotations
-
 import importlib
 import importlib.metadata
 import inspect

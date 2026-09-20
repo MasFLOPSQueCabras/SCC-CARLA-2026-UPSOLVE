@@ -1,7 +1,9 @@
+import json
 import logging
 import socket
 import subprocess
 import time
+from pathlib import Path
 from types import TracebackType
 from typing import Any, Self
 
@@ -175,19 +177,34 @@ class BMCController:
 
     def __init__(
         self,
-        manifest: ClusterManifest | None = None,
+        manifest: ClusterManifest | Any | None = None,
         bastion_ssh_host: str = "scc-bastion",
         bastion_hostname: str = "carlanga",
         bmc_user: str = "",
         bmc_password: str = "",
     ) -> None:
-        self.manifest = manifest
-        self.bastion_ssh_host = (
-            manifest.bastion.ssh_host if manifest else bastion_ssh_host
-        )
-        self.bastion_hostname = bastion_hostname
-        self.default_bmc_user = bmc_user
-        self.default_bmc_password = bmc_password
+        if manifest is not None and not isinstance(manifest, ClusterManifest):
+            # ClusterSettings compatibility
+            settings = manifest
+            self.manifest = None
+            self.settings = settings
+            self.bastion_ssh_host = getattr(
+                settings, "bastion_ssh_host", bastion_ssh_host
+            )
+            self.bastion_hostname = getattr(
+                settings, "bastion_hostname", bastion_hostname
+            )
+            self.default_bmc_user = getattr(settings, "bmc_user", bmc_user)
+            self.default_bmc_password = getattr(settings, "bmc_password", bmc_password)
+        else:
+            self.manifest = manifest
+            self.settings = None
+            self.bastion_ssh_host = (
+                manifest.bastion.ssh_host if manifest else bastion_ssh_host
+            )
+            self.bastion_hostname = bastion_hostname
+            self.default_bmc_user = bmc_user
+            self.default_bmc_password = bmc_password
         self.socks_port = 10872
         self._tunnel: SSHSocksTunnel | None = None
 
@@ -230,6 +247,12 @@ class BMCController:
                         n.bmc.user or self.default_bmc_user,
                         n.bmc.password or self.default_bmc_password,
                     )
+        if self.settings is not None:
+            return (
+                self.settings.get_bmc_ip(node_id),
+                self.settings.bmc_user,
+                self.settings.bmc_password,
+            )
         # Default fallback formula
         return (f"10.1.72.{node_id}", self.default_bmc_user, self.default_bmc_password)
 
@@ -366,16 +389,33 @@ class BMCController:
         return None
 
     def get_bios_settings(self, node_id: int) -> dict[str, Any]:
+        """Retrieves active BIOS attributes from Redfish."""
+        try:
+            with self.get_client(node_id) as client:
+                resp = client.get("/redfish/v1/Systems/1/Bios/")
+                if resp.status_code == 200:
+                    return resp.json().get("Attributes", {})
+        except (httpx2.HTTPError, OSError) as err:
+            logger.debug("Failed to fetch BIOS settings for Node %s: %s", node_id, err)
+        return {}
+
+    def get_pending_bios_settings(self, node_id: int) -> dict[str, Any]:
+        """Retrieves pending (staged) BIOS attributes waiting for server reboot."""
         try:
             with self.get_client(node_id) as client:
                 resp = client.get("/redfish/v1/systems/1/bios/settings/")
                 if resp.status_code == 200:
                     return resp.json().get("Attributes", {})
-        except httpx2.HTTPError, OSError:
-            pass
+        except (httpx2.HTTPError, OSError) as err:
+            logger.debug(
+                "Failed to fetch pending BIOS settings for Node %s: %s", node_id, err
+            )
         return {}
 
     def set_bios_settings(self, node_id: int, attributes: dict[str, Any]) -> bool:
+        """Stages BIOS attribute changes via PATCH to pending settings endpoint."""
+        if not attributes:
+            return True
         try:
             with self.get_client(node_id) as client:
                 resp = client.patch(
@@ -383,5 +423,13 @@ class BMCController:
                     {"Attributes": attributes},
                 )
                 return resp.status_code in (200, 204)
-        except httpx2.HTTPError, OSError:
+        except (httpx2.HTTPError, OSError) as err:
+            logger.debug("Failed to stage BIOS settings for Node %s: %s", node_id, err)
             return False
+
+    def backup_bios(self, node_id: int, output_path: Path) -> Path:
+        """Dumps complete active BIOS attributes for a node into a formatted JSON file."""
+        attrs = self.get_bios_settings(node_id)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(json.dumps(attrs, indent=2), encoding="utf-8")
+        return output_path

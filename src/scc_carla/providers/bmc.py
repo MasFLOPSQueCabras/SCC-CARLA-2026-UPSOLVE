@@ -1,10 +1,13 @@
 """Helvetios bare-metal provider re-export."""
 
-from __future__ import annotations
+from typing import Any
 
-from scc_provider_helvetios.provider import HelvetiosProvider
+try:
+    from scc_provider_helvetios.provider import HelvetiosProvider
 
-# Backward compatibility alias
-BMCProvider = HelvetiosProvider
+    BMCProvider = HelvetiosProvider
+except ImportError:
+    HelvetiosProvider: Any = None
+    BMCProvider: Any = None
 
 __all__ = ["BMCProvider", "HelvetiosProvider"]

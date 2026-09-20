@@ -1,7 +1,10 @@
 """Libvirt virtualization provider re-export."""
 
-from __future__ import annotations
+from typing import Any
 
-from scc_provider_libvirt.provider import LibvirtProvider
+try:
+    from scc_provider_libvirt.provider import LibvirtProvider
+except ImportError:
+    LibvirtProvider: Any = None
 
 __all__ = ["LibvirtProvider"]

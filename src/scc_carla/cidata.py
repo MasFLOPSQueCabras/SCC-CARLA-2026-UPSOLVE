@@ -1,8 +1,8 @@
-"""CIDATA generation re-exports.
+from typing import Any
 
-Consolidates under `scc_provider_libvirt.cidata` to eliminate code duplication.
-"""
-
-from scc_provider_libvirt.cidata import generate_cidata
+try:
+    from scc_provider_libvirt.cidata import generate_cidata
+except ImportError:
+    generate_cidata: Any = None
 
 __all__ = ["generate_cidata"]

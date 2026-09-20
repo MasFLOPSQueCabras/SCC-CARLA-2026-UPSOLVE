@@ -31,9 +31,16 @@ def bios_show_command(
     settings: ClusterSettings,
     node: int | list[int] | None = None,
 ) -> None:
-    if settings.provider != "bmc":
+    if settings.provider not in ("bmc", "helvetios"):
         console.print(
             f"[yellow]BIOS operations are not supported for provider '{settings.provider}'.[/yellow]"
+        )
+        return
+
+    if BMCController is None:
+        console.print(
+            "[bold red]Helvetios provider dependencies are not installed.[/bold red]\n"
+            "Run 'uv sync --extra helvetios' to enable BIOS management."
         )
         return
 
@@ -86,9 +93,16 @@ def bios_backup_command(
     node: int = 1,
     output: Path | None = None,
 ) -> None:
-    if settings.provider != "bmc":
+    if settings.provider not in ("bmc", "helvetios"):
         console.print(
             f"[yellow]BIOS operations are not supported for provider '{settings.provider}'.[/yellow]"
+        )
+        return
+
+    if BMCController is None:
+        console.print(
+            "[bold red]Helvetios provider dependencies are not installed.[/bold red]\n"
+            "Run 'uv sync --extra helvetios' to enable BIOS management."
         )
         return
 
@@ -143,9 +157,16 @@ def bios_apply_command(
     profile: BiosProfile = BiosProfile.HPC,
     force_lock: bool = False,
 ) -> None:
-    if settings.provider != "bmc":
+    if settings.provider not in ("bmc", "helvetios"):
         console.print(
             f"[yellow]BIOS operations are not supported for provider '{settings.provider}'.[/yellow]"
+        )
+        return
+
+    if BMCController is None:
+        console.print(
+            "[bold red]Helvetios provider dependencies are not installed.[/bold red]\n"
+            "Run 'uv sync --extra helvetios' to enable BIOS management."
         )
         return
 

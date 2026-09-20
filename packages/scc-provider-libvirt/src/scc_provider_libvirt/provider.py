@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import contextlib
 import subprocess
 from collections.abc import Callable, Generator

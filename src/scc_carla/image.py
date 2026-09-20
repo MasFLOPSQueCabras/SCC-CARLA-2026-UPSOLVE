@@ -1,9 +1,14 @@
 import shutil
 import subprocess
 from pathlib import Path
+from typing import Any
 
 from rich.console import Console
-from scc_provider_libvirt.overlay import create_cow_overlay
+
+try:
+    from scc_provider_libvirt.overlay import create_cow_overlay
+except ImportError:
+    create_cow_overlay: Any = None
 
 from scc_carla.config import ClusterSettings
 from scc_carla.paths import get_image_cache_dir

@@ -4,8 +4,6 @@ Provides bounded, thread-safe concurrent execution with rich result aggregation,
 fail-safe timeout guarantees, and zero circular lock hazards.
 """
 
-from __future__ import annotations
-
 import time
 from collections.abc import Callable, Iterable
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed

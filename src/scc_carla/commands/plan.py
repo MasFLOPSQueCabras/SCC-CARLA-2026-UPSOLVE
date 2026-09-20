@@ -4,8 +4,6 @@ Compares declared cluster manifest configuration (values.yaml / configs/clusters
 against observed live state across hypervisor/BMC, database, and operational locks.
 """
 
-from __future__ import annotations
-
 import contextlib
 from enum import StrEnum
 from pathlib import Path

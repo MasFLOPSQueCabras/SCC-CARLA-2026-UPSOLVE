@@ -1,7 +1,5 @@
 """Golden Image caching, format conversion, and compression utilities."""
 
-from __future__ import annotations
-
 import json
 import shutil
 import subprocess

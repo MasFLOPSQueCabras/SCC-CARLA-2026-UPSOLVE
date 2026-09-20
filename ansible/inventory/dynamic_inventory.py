@@ -9,8 +9,6 @@ Reads cluster topology, host IPs, roles, and network parameters dynamically from
 5. Default cluster config in configs/clusters/helvetios-hpc.yaml (or vm-standard.yaml)
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 import os
