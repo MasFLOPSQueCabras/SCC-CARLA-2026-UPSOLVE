@@ -6,6 +6,7 @@ against observed live state across hypervisor/BMC, database, and operational loc
 
 from __future__ import annotations
 
+import contextlib
 from enum import StrEnum
 from pathlib import Path
 from typing import Annotated
@@ -134,7 +135,22 @@ def plan_command(
     # 3. Provider & Node Inspection
     db_nodes = {n.node_id: n for n in get_all_nodes(active_settings)}
 
-    with get_provider(active_settings, manifest.provider) as prov:
+    stack = contextlib.ExitStack()
+    prov: NodeProvider | None = None
+    try:
+        p = get_provider(active_settings, manifest.provider)
+        prov = stack.enter_context(p)
+    except Exception as exc:  # noqa: BLE001
+        diff_table.add_row(
+            f"Provider '{manifest.provider}'",
+            "Infrastructure",
+            "Target hypervisor / BMC connection",
+            f"[yellow]Offline / Unreachable ({type(exc).__name__})[/yellow]",
+            ActionType.TASK,
+        )
+        counts[ActionType.TASK] += 1
+
+    with stack:
         for node in manifest.nodes:
             node_id = node.id
             db_node = db_nodes.get(node_id)
@@ -183,7 +199,7 @@ def plan_command(
 
 
 def _plan_libvirt_node(
-    prov: NodeProvider,
+    prov: NodeProvider | None,
     node: NodeSpec,
     manifest: ClusterManifest,
     diff_table: Table,
@@ -205,14 +221,15 @@ def _plan_libvirt_node(
     # Check if domain exists on libvirt
     dom_exists = False
     is_active = False
-    conn = getattr(prov, "conn", None)
-    if conn is not None:
-        try:
-            dom = conn.lookupByName(hostname)
-            dom_exists = True
-            is_active = bool(dom.isActive())
-        except Exception:  # noqa: BLE001
-            dom_exists = False
+    if prov is not None:
+        conn = getattr(prov, "conn", None)
+        if conn is not None:
+            try:
+                dom = conn.lookupByName(hostname)
+                dom_exists = True
+                is_active = bool(dom.isActive())
+            except Exception:  # noqa: BLE001
+                dom_exists = False
 
     if not dom_exists:
         diff_table.add_row(
@@ -247,7 +264,7 @@ def _plan_libvirt_node(
 
 
 def _plan_helvetios_node(
-    prov: NodeProvider,
+    prov: NodeProvider | None,
     node: NodeSpec,
     manifest: ClusterManifest,
     diff_table: Table,
@@ -261,18 +278,20 @@ def _plan_helvetios_node(
 
     declared_desc = f"IP: {node.ip}, BMC: {bmc_ip}, BIOS: {bios_target}, Root: {hw_spec.target_disk}"
 
-    try:
-        pwr = prov.get_power_status(node.id)
-        power_str = pwr.value if hasattr(pwr, "value") else str(pwr)
-    except (
-        OSError,
-        RuntimeError,
-        ConnectionError,
-        TimeoutError,
-        KeyError,
-        AttributeError,
-    ):
-        power_str = "UNREACHABLE"
+    power_str = "UNREACHABLE"
+    if prov is not None:
+        try:
+            pwr = prov.get_power_status(node.id)
+            power_str = pwr.value if hasattr(pwr, "value") else str(pwr)
+        except (
+            OSError,
+            RuntimeError,
+            ConnectionError,
+            TimeoutError,
+            KeyError,
+            AttributeError,
+        ):
+            power_str = "UNREACHABLE"
 
     observed_desc = f"Power: {power_str}, DB: {current_lifecycle.value}"
 

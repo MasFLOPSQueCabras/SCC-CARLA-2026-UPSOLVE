@@ -67,7 +67,9 @@ jobs:
       - name: Install system libvirt dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libvirt-dev pkg-config
+          sudo apt-get install -y libvirt-daemon-system libvirt-dev pkg-config
+          sudo systemctl start libvirtd || sudo service libvirtd start || true
+          sudo chmod 666 /var/run/libvirt/libvirt-sock || true
 
       - name: Sync dependencies
         run: |
@@ -95,7 +97,9 @@ jobs:
       - name: Install system libvirt dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libvirt-dev pkg-config
+          sudo apt-get install -y libvirt-daemon-system libvirt-dev pkg-config
+          sudo systemctl start libvirtd || sudo service libvirtd start || true
+          sudo chmod 666 /var/run/libvirt/libvirt-sock || true
 
       - name: Sync dependencies
         run: |
