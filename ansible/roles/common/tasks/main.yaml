@@ -39,6 +39,7 @@
       - openssl
       - openssl-devel
       - hwloc
+      - firewalld
     state: present
 
 - name: Ensure firewalld is enabled and running

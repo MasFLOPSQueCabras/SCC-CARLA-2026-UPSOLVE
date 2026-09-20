@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ISO_CACHE_DIR="${HOME}/.cache/scc_carla/iso"
+SERVE_DIR="{{ serve_dir }}"
+ISO_NAME="{{ iso_name }}"
+SOURCE_URL="{{ source_url }}"
+
+mkdir -p "${ISO_CACHE_DIR}" "${SERVE_DIR}"
+
+TARGET_ISO="${ISO_CACHE_DIR}/${ISO_NAME}"
+curl -L -o "${TARGET_ISO}" "${SOURCE_URL}"
+
+# Patch GRUB timeout and default boot option in-place
+python3 - <<'EOF' "${TARGET_ISO}"
+import mmap
+import sys
+
+target = sys.argv[1]
+with open(target, "r+b") as f:
+    with mmap.mmap(f.fileno(), 0) as mm:
+        start = 0
+        while True:
+            idx = mm.find(b'set default="1"', start)
+            if idx == -1:
+                break
+            mm[idx : idx + 15] = b'set default="0"'
+            start = idx + 15
+
+        start = 0
+        while True:
+            idx = mm.find(b'set timeout=60', start)
+            if idx == -1:
+                break
+            mm[idx : idx + 14] = b'set timeout=02'
+            start = idx + 14
+        mm.flush()
+EOF
+
+cp "${TARGET_ISO}" "${SERVE_DIR}/${ISO_NAME}"

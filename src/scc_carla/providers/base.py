@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 from types import TracebackType
@@ -18,8 +19,36 @@ class PowerState(StrEnum):
     UNKNOWN = "UNKNOWN"
 
 
+@dataclass(frozen=True)
+class ProviderPaths:
+    """Declared filesystem, storage, and networking parameters for a provider."""
+
+    staging_dir: Path
+    iso_cache_dir: Path
+    state_db_path: Path | str
+    gateway_ip: str = "10.2.72.254"
+    dns_ip: str = "10.2.72.254"
+    storage_dir: Path | None = None
+    remote_serve_dir: str | None = None
+    bastion_ssh_host: str | None = None
+
+
 class NodeProvider(ABC):
     """Abstract base class for bare-metal, virtualized, or cloud node providers."""
+
+    @property
+    @abstractmethod
+    def name(self) -> str:
+        """String identifier for provider (e.g. 'libvirt', 'bmc', 'chameleon')."""
+
+    @property
+    @abstractmethod
+    def paths(self) -> ProviderPaths:
+        """Declared filesystem and storage paths for this provider."""
+
+    @abstractmethod
+    def get_node_ip(self, node_id: int) -> str:
+        """Returns the OS IP address for a given node ID."""
 
     @abstractmethod
     def power_on(self, node_id: int) -> bool:

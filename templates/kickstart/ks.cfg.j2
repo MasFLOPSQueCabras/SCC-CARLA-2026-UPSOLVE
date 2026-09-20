@@ -12,12 +12,17 @@ keyboard us
 timezone America/Argentina/Cordoba --utc
 
 # Network configuration
-network --bootproto=static --ip={{ node_ip }} --netmask=255.255.255.0 --gateway={{ gateway_ip }} --nameserver={{ dns_ip }} --device=link --activate --hostname={{ hostname }}
+network --bootproto=static --ip={{ node_ip }} --netmask=255.255.255.0 --gateway={{ gateway_ip }} --nameserver={{ dns_ip }} --device=link --activate --onboot=yes --hostname={{ hostname }}
 
-# Storage configuration (UEFI & 800GB SSD)
+# Storage configuration
 bootloader --location=mbr
 zerombr
+{% if target_disk %}
+ignoredisk --only-use={{ target_disk }}
+clearpart --all --initlabel --drives={{ target_disk }}
+{% else %}
 clearpart --all --initlabel
+{% endif %}
 autopart --type=plain
 
 # User & Security configuration
@@ -45,9 +50,20 @@ tar
 echo "{{ node_username }} ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/{{ node_username }}
 chmod 0440 /etc/sudoers.d/{{ node_username }}
 
+# Ensure authorized_keys
+mkdir -p /home/{{ node_username }}/.ssh
+echo "{{ pubkey }}" >> /home/{{ node_username }}/.ssh/authorized_keys
+chmod 700 /home/{{ node_username }}/.ssh
+chmod 600 /home/{{ node_username }}/.ssh/authorized_keys
+chown -R {{ node_username }}:{{ node_username }} /home/{{ node_username }}/.ssh
+
 # Harden sshd: permit user key login, disable root login
-sed -i 's/^#*PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config
-sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
+mkdir -p /etc/ssh/sshd_config.d
+cat << 'EOF' > /etc/ssh/sshd_config.d/01-carla.conf
+PermitRootLogin no
+PasswordAuthentication no
+PubkeyAuthentication yes
+EOF
 
 systemctl enable sshd
 %end

@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PORT="{{ port }}"
+fuser -k "${PORT}/tcp" 2>/dev/null || pkill -f "RangeHTTPServer.*${PORT}" 2>/dev/null || true
+
+{% if remove_dir %}
+rm -rf "{{ remove_dir }}"
+{% endif %}

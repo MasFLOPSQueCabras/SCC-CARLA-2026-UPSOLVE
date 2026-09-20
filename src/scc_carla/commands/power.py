@@ -1,4 +1,5 @@
 import time
+from collections.abc import Callable
 
 from rich.console import Console
 from rich.table import Table
@@ -13,13 +14,85 @@ from scc_carla.providers.factory import get_provider
 console = Console()
 
 
-def power_on_command(
+def _wait_for_node_power(
+    prov: NodeProvider,
+    node: int,
+    hostname: str,
+    target_state: PowerState,
+    timeout_sec: int,
+    initial_delay_sec: float = 0.0,
+) -> None:
+    if initial_delay_sec > 0:
+        time.sleep(initial_delay_sec)
+
+    with console.status(
+        f"[cyan]Waiting for {hostname} power state -> {target_state.value}...[/cyan]"
+    ):
+        reached = wait_for_power_state(
+            lambda: prov.get_power_status(node),
+            target_state,
+            timeout_sec=timeout_sec,
+        )
+
+    if reached:
+        console.print(
+            f"[bold green]✓ {hostname} is confirmed {target_state.value}.[/bold green]"
+        )
+    else:
+        console.print(
+            f"[bold yellow]Timed out waiting for {hostname} to reach {target_state.value}.[/bold yellow]"
+        )
+
+
+def _execute_single_power_action(
+    prov: NodeProvider,
     settings: ClusterSettings,
-    node: list[int] | int | None = None,
+    node: int,
+    action_label: str,
+    action_fn: Callable[[int], bool],
+    expected_state: PowerState | None = None,
+    wait: bool = False,
+    wait_timeout: int = 60,
+    initial_delay_sec: float = 0.0,
+    new_lifecycle: NodeLifecycle | None = None,
+) -> bool:
+    hostname = settings.get_hostname(node)
+    with console.status(f"[cyan]{action_label.capitalize()} {hostname}...[/cyan]"):
+        success = action_fn(node)
+
+    if not success:
+        console.print(f"[bold red]Failed to {action_label} {hostname}.[/bold red]")
+        return False
+
+    console.print(f"[green]✓[/green] {hostname} {action_label} signal sent.")
+    if new_lifecycle is not None:
+        update_node_state(settings, node, new_lifecycle)
+
+    if wait and expected_state is not None:
+        _wait_for_node_power(
+            prov=prov,
+            node=node,
+            hostname=hostname,
+            target_state=expected_state,
+            timeout_sec=wait_timeout,
+            initial_delay_sec=initial_delay_sec,
+        )
+    return True
+
+
+def _run_cluster_power_action(
+    settings: ClusterSettings,
+    node: list[int] | int | None,
+    operation: str,
+    action_label: str,
+    action_fn: Callable[[NodeProvider, int], bool],
+    expected_state: PowerState | None = None,
     wait: bool = False,
     wait_timeout: int = 60,
     force_lock: bool = False,
     provider: str | None = None,
+    initial_delay_sec: float = 0.0,
+    new_lifecycle: NodeLifecycle | None = None,
 ) -> None:
     try:
         targets = resolve_target_nodes(node)
@@ -30,43 +103,50 @@ def power_on_command(
     try:
         with (
             cluster_lock(
-                settings, targets=targets, operation="power-on", force=force_lock
+                settings, targets=targets, operation=operation, force=force_lock
             ),
             get_provider(settings, provider) as prov,
         ):
             for n in targets:
-                hostname = settings.get_hostname(n)
-                with console.status(f"[cyan]Powering on {hostname}...[/cyan]"):
-                    success = prov.power_on(n)
-                if success:
-                    console.print(
-                        f"[green]✓[/green] Power on signal sent to {hostname}."
-                    )
-                    if wait:
-                        with console.status(
-                            f"[cyan]Waiting for {hostname} power state -> ON...[/cyan]"
-                        ):
-                            if wait_for_power_state(
-                                lambda n=n: prov.get_power_status(n),
-                                PowerState.ON,
-                                timeout_sec=wait_timeout,
-                            ):
-                                console.print(
-                                    f"[bold green]✓ {hostname} is confirmed ON.[/bold green]"
-                                )
-                            else:
-                                console.print(
-                                    f"[bold yellow]Timed out waiting for {hostname} to reach ON.[/bold yellow]"
-                                )
-                else:
-                    console.print(
-                        f"[bold red]Failed to power on {hostname}.[/bold red]"
-                    )
+                _execute_single_power_action(
+                    prov=prov,
+                    settings=settings,
+                    node=n,
+                    action_label=action_label,
+                    action_fn=lambda nid: action_fn(prov, nid),
+                    expected_state=expected_state,
+                    wait=wait,
+                    wait_timeout=wait_timeout,
+                    initial_delay_sec=initial_delay_sec,
+                    new_lifecycle=new_lifecycle,
+                )
     except LockError as e:
         console.print(f"[bold red]Lock conflict: {e}[/bold red]")
         console.print(
             "[dim]Tip: Use --force-lock to override or 'scc-carla lock list' to view active locks.[/dim]"
         )
+
+
+def power_on_command(
+    settings: ClusterSettings,
+    node: list[int] | int | None = None,
+    wait: bool = False,
+    wait_timeout: int = 60,
+    force_lock: bool = False,
+    provider: str | None = None,
+) -> None:
+    _run_cluster_power_action(
+        settings=settings,
+        node=node,
+        operation="power-on",
+        action_label="power on",
+        action_fn=lambda prov, n: prov.power_on(n),
+        expected_state=PowerState.ON,
+        wait=wait,
+        wait_timeout=wait_timeout,
+        force_lock=force_lock,
+        provider=provider,
+    )
 
 
 def power_off_command(
@@ -78,56 +158,20 @@ def power_off_command(
     force_lock: bool = False,
     provider: str | None = None,
 ) -> None:
-    try:
-        targets = resolve_target_nodes(node)
-    except ValueError as e:
-        console.print(f"[bold red]{e}[/bold red]")
-        return
-
     mode_str = "graceful" if graceful else "forced"
-    try:
-        with (
-            cluster_lock(
-                settings, targets=targets, operation="power-off", force=force_lock
-            ),
-            get_provider(settings, provider) as prov,
-        ):
-            for n in targets:
-                hostname = settings.get_hostname(n)
-                with console.status(
-                    f"[cyan]Powering off {hostname} ({mode_str})...[/cyan]"
-                ):
-                    success = prov.power_off(n, graceful=graceful)
-                if success:
-                    update_node_state(settings, n, NodeLifecycle.OFFLINE)
-                    console.print(
-                        f"[green]✓[/green] Power off signal sent to {hostname} ({mode_str})."
-                    )
-                    if wait:
-                        with console.status(
-                            f"[cyan]Waiting for {hostname} power state -> OFF...[/cyan]"
-                        ):
-                            if wait_for_power_state(
-                                lambda n=n: prov.get_power_status(n),
-                                PowerState.OFF,
-                                timeout_sec=wait_timeout,
-                            ):
-                                console.print(
-                                    f"[bold green]✓ {hostname} is confirmed OFF.[/bold green]"
-                                )
-                            else:
-                                console.print(
-                                    f"[bold yellow]Timed out waiting for {hostname} to reach OFF.[/bold yellow]"
-                                )
-                else:
-                    console.print(
-                        f"[bold red]Failed to power off {hostname}.[/bold red]"
-                    )
-    except LockError as e:
-        console.print(f"[bold red]Lock conflict: {e}[/bold red]")
-        console.print(
-            "[dim]Tip: Use --force-lock to override or 'scc-carla lock list' to view active locks.[/dim]"
-        )
+    _run_cluster_power_action(
+        settings=settings,
+        node=node,
+        operation="power-off",
+        action_label=f"power off ({mode_str})",
+        action_fn=lambda prov, n: prov.power_off(n, graceful=graceful),
+        expected_state=PowerState.OFF,
+        wait=wait,
+        wait_timeout=wait_timeout,
+        force_lock=force_lock,
+        provider=provider,
+        new_lifecycle=NodeLifecycle.OFFLINE,
+    )
 
 
 def power_restart_command(
@@ -139,57 +183,20 @@ def power_restart_command(
     force_lock: bool = False,
     provider: str | None = None,
 ) -> None:
-    try:
-        targets = resolve_target_nodes(node)
-    except ValueError as e:
-        console.print(f"[bold red]{e}[/bold red]")
-        return
-
     mode_str = "graceful" if graceful else "forced"
-    try:
-        with (
-            cluster_lock(
-                settings,
-                targets=targets,
-                operation="power-restart",
-                force=force_lock,
-            ),
-            get_provider(settings, provider) as prov,
-        ):
-            for n in targets:
-                hostname = settings.get_hostname(n)
-                with console.status(
-                    f"[cyan]Restarting {hostname} ({mode_str})...[/cyan]"
-                ):
-                    success = prov.power_reset(n, graceful=graceful)
-                if success:
-                    console.print(
-                        f"[green]✓[/green] {hostname} restart signal sent ({mode_str})."
-                    )
-                    if wait:
-                        with console.status(
-                            f"[cyan]Waiting for {hostname} to cycle and reach ON...[/cyan]"
-                        ):
-                            time.sleep(3)
-                            if wait_for_power_state(
-                                lambda n=n: prov.get_power_status(n),
-                                PowerState.ON,
-                                timeout_sec=wait_timeout,
-                            ):
-                                console.print(
-                                    f"[bold green]✓ {hostname} reboot complete and confirmed ON.[/bold green]"
-                                )
-                            else:
-                                console.print(
-                                    f"[bold yellow]Timed out waiting for {hostname} to reach ON.[/bold yellow]"
-                                )
-                else:
-                    console.print(f"[bold red]Failed to restart {hostname}.[/bold red]")
-    except LockError as e:
-        console.print(f"[bold red]Lock conflict: {e}[/bold red]")
-        console.print(
-            "[dim]Tip: Use --force-lock to override or 'scc-carla lock list' to view active locks.[/dim]"
-        )
+    _run_cluster_power_action(
+        settings=settings,
+        node=node,
+        operation="power-restart",
+        action_label=f"restart ({mode_str})",
+        action_fn=lambda prov, n: prov.power_reset(n, graceful=graceful),
+        expected_state=PowerState.ON,
+        wait=wait,
+        wait_timeout=wait_timeout,
+        force_lock=force_lock,
+        provider=provider,
+        initial_delay_sec=3.0,
+    )
 
 
 def power_status_command(
@@ -340,6 +347,10 @@ def power_metrics_command(
         return
 
     with get_provider(settings, provider) as prov:
+        metrics_sample = prov.get_power_metrics(targets[0])
+        if metrics_sample is None:
+            return
+
         if watch:
             from rich.live import Live
 

@@ -5,7 +5,7 @@ from pathlib import Path
 def is_ssh_authenticated(
     target_ip: str,
     username: str,
-    bastion_ssh_host: str | None = "scc-bastion",
+    bastion_ssh_host: str | None = None,
     key_path: Path | None = None,
     timeout: int = 5,
 ) -> bool:

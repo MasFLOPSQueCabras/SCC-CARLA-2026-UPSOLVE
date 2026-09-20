@@ -10,6 +10,8 @@ from typing import Self
 
 from RangeHTTPServer import RangeRequestHandler
 
+from scc_carla.templating import TemplateEngine
+
 logger = logging.getLogger(__name__)
 
 
@@ -31,15 +33,17 @@ class EphemeralRangeHTTPServer:
         bind_ip: str,
         bastion_ssh_host: str,
         bastion_hostname: str,
-        remote_serve_dir: str = "~/scc_serve",
+        template_engine: TemplateEngine,
+        remote_serve_dir: Path | str | None = None,
         serve_dir: Path | None = None,
     ) -> None:
         self.port = port
         self.bind_ip = bind_ip
         self.bastion_ssh_host = bastion_ssh_host
         self.bastion_hostname = bastion_hostname
-        self.remote_serve_dir = remote_serve_dir
-        self.serve_path = serve_dir or Path.home() / "scc_serve"
+        self.template_engine = template_engine
+        self.remote_serve_dir = remote_serve_dir or (Path.home() / "scc_serve")
+        self.serve_path = serve_dir or (Path.home() / "scc_serve")
         self.on_bastion = is_running_on_bastion(self.bastion_hostname)
 
         self._local_server: http.server.ThreadingHTTPServer | None = None
@@ -73,17 +77,14 @@ class EphemeralRangeHTTPServer:
             return
 
         # Running on local workstation: check if Range server is already active on bastion
+        check_script = self.template_engine.render(
+            "scripts/check_port.sh.j2",
+            {"bind_ip": self.bind_ip, "port": self.port},
+        )
         check_alive = subprocess.run(
-            [
-                "ssh",
-                self.bastion_ssh_host,
-                (
-                    f'python3 -c "'
-                    f"import socket; s = socket.socket(); s.settimeout(1.0); "
-                    f"res = s.connect_ex(('{self.bind_ip}', {self.port})); s.close(); "
-                    f'exit(0 if res == 0 else 1)"'
-                ),
-            ],
+            ["ssh", self.bastion_ssh_host, "bash -s"],
+            input=check_script,
+            text=True,
             check=False,
             capture_output=True,
         )
@@ -97,49 +98,37 @@ class EphemeralRangeHTTPServer:
             return
 
         self._reused_existing = False
-        logger.info("Cleaning any stale HTTP servers on bastion port %s...", self.port)
-        subprocess.run(
-            [
-                "ssh",
-                self.bastion_ssh_host,
-                (
-                    f"fuser -k {self.port}/tcp 2>/dev/null || pkill -f 'RangeHTTPServer.*{self.port}' 2>/dev/null || true; "
-                    f"mkdir -p {self.remote_serve_dir}"
-                ),
-            ],
-            check=False,
-            capture_output=True,
-        )
-
-        server_script = (
-            f"import os, sys, http.server, functools; "
-            f"from RangeHTTPServer import RangeRequestHandler; "
-            f"path = os.path.expanduser('{self.remote_serve_dir}'); "
-            f"os.makedirs(path, exist_ok=True); "
-            f"os.chdir(path); "
-            f"handler = functools.partial(RangeRequestHandler, directory=path); "
-            f"server = http.server.ThreadingHTTPServer(('{self.bind_ip}', {self.port}), handler); "
-            f"print('READY', flush=True); "
-            f"server.serve_forever()"
-        )
-
-        ssh_cmd = [
-            "ssh",
-            self.bastion_ssh_host,
-            f'python3 -c "{server_script}"',
-        ]
-
         logger.info(
             "Starting ephemeral Range HTTP server on bastion %s:%s...",
             self.bind_ip,
             self.port,
         )
+
+        server_script = self.template_engine.render(
+            "scripts/bastion_http_server.sh.j2",
+            {
+                "bind_ip": self.bind_ip,
+                "port": self.port,
+                "serve_dir": str(self.remote_serve_dir),
+            },
+        )
+
+        ssh_cmd = [
+            "ssh",
+            self.bastion_ssh_host,
+            "bash -s",
+        ]
+
         self._bastion_proc = subprocess.Popen(
             ssh_cmd,
+            stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
         )
+        if self._bastion_proc.stdin:
+            self._bastion_proc.stdin.write(server_script)
+            self._bastion_proc.stdin.close()
 
         # Wait for "READY" signal
         start_time = time.time()
@@ -198,12 +187,17 @@ class EphemeralRangeHTTPServer:
                 logger.debug("Could not verify node installation state: %s", e)
 
             # Clean up processes and remove staging directory on bastion
+            stop_script = self.template_engine.render(
+                "scripts/bastion_http_stop.sh.j2",
+                {
+                    "port": self.port,
+                    "remove_dir": str(self.remote_serve_dir),
+                },
+            )
             subprocess.run(
-                [
-                    "ssh",
-                    self.bastion_ssh_host,
-                    f"fuser -k {self.port}/tcp 2>/dev/null || true; rm -rf {self.remote_serve_dir}",
-                ],
+                ["ssh", self.bastion_ssh_host, "bash -s"],
+                input=stop_script,
+                text=True,
                 check=False,
                 capture_output=True,
             )
@@ -224,10 +218,12 @@ class EphemeralRangeHTTPServer:
         cls,
         bastion_ssh_host: str,
         port: int,
-        remote_dir: str = "~/scc_serve",
+        template_engine: TemplateEngine,
+        remote_dir: Path | str | None = None,
         force: bool = False,
     ) -> bool:
         """Kills any HTTP servers bound to port on the bastion and sweeps the staging directory if safe."""
+        target_dir = str(remote_dir or (Path.home() / "scc_serve"))
         if not force:
             try:
                 from scc_carla.config import get_settings
@@ -241,17 +237,19 @@ class EphemeralRangeHTTPServer:
                     )
                     return False
             except Exception as e:  # noqa: BLE001
-                logger.debug("Could not verify node installation state: %s", e)
+                logger.debug("Could not verify node states before sweep: %s", e)
 
+        stop_script = template_engine.render(
+            "scripts/bastion_http_stop.sh.j2",
+            {
+                "port": port,
+                "remove_dir": target_dir,
+            },
+        )
         subprocess.run(
-            [
-                "ssh",
-                bastion_ssh_host,
-                (
-                    f"fuser -k {port}/tcp 2>/dev/null || pkill -f 'RangeHTTPServer.*{port}' 2>/dev/null || true; "
-                    f"rm -rf {remote_dir}"
-                ),
-            ],
+            ["ssh", bastion_ssh_host, "bash -s"],
+            input=stop_script,
+            text=True,
             check=False,
             capture_output=True,
         )

@@ -33,9 +33,13 @@ def _probe_node(
     reachability = "DOWN"
 
     if power == "ON":
-        node_ip = settings.get_node_ip(node_id)
+        node_ip = prov.get_node_ip(node_id)
         if is_ssh_authenticated(
-            node_ip, settings.node_username, key_path=key_path, timeout=3
+            node_ip,
+            settings.node_username,
+            bastion_ssh_host=prov.paths.bastion_ssh_host,
+            key_path=key_path,
+            timeout=3,
         ):
             reachability = "SSH READY"
         else:

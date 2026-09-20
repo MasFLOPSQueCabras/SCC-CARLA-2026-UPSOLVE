@@ -3,7 +3,9 @@ from typing import Any
 
 from scc_carla.bmc import BMCController
 from scc_carla.config import ClusterSettings
-from scc_carla.providers.base import NodeProvider, PowerState
+from scc_carla.http_server import is_running_on_bastion
+from scc_carla.paths import get_iso_cache_dir, get_staging_dir
+from scc_carla.providers.base import NodeProvider, PowerState, ProviderPaths
 
 
 class BMCProvider(NodeProvider):
@@ -12,6 +14,27 @@ class BMCProvider(NodeProvider):
     def __init__(self, settings: ClusterSettings) -> None:
         self.settings = settings
         self.bmc = BMCController(settings)
+
+    @property
+    def name(self) -> str:
+        return "bmc"
+
+    @property
+    def paths(self) -> ProviderPaths:
+        on_bastion = is_running_on_bastion(self.settings.bastion_hostname)
+        return ProviderPaths(
+            staging_dir=get_staging_dir(),
+            iso_cache_dir=get_iso_cache_dir(),
+            storage_dir=None,
+            state_db_path=self.settings.bastion_state_db_path,
+            gateway_ip=self.settings.gateway_ip,
+            dns_ip=self.settings.dns_ip,
+            remote_serve_dir=str(Path.home() / "scc_serve"),
+            bastion_ssh_host=None if on_bastion else self.settings.bastion_ssh_host,
+        )
+
+    def get_node_ip(self, node_id: int) -> str:
+        return self.settings.get_node_ip(node_id)
 
     def power_on(self, node_id: int) -> bool:
         return self.bmc.power_on(node_id)

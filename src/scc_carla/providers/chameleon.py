@@ -3,7 +3,8 @@ from pathlib import Path
 from typing import Any
 
 from scc_carla.config import ClusterSettings
-from scc_carla.providers.base import NodeProvider, PowerState
+from scc_carla.paths import get_iso_cache_dir, get_local_db_path, get_staging_dir
+from scc_carla.providers.base import NodeProvider, PowerState, ProviderPaths
 
 
 class ChameleonProvider(NodeProvider):
@@ -16,6 +17,26 @@ class ChameleonProvider(NodeProvider):
         self.settings = settings
         self.project_id = os.environ.get("OS_PROJECT_ID", "")
         self.auth_url = os.environ.get("OS_AUTH_URL", "")
+
+    @property
+    def name(self) -> str:
+        return "chameleon"
+
+    @property
+    def paths(self) -> ProviderPaths:
+        return ProviderPaths(
+            staging_dir=get_staging_dir(),
+            iso_cache_dir=get_iso_cache_dir(),
+            storage_dir=None,
+            state_db_path=get_local_db_path(),
+            gateway_ip=self.settings.gateway_ip,
+            dns_ip=self.settings.dns_ip,
+            remote_serve_dir=None,
+            bastion_ssh_host=None,
+        )
+
+    def get_node_ip(self, node_id: int) -> str:
+        return self.settings.get_node_ip(node_id)
 
     def power_on(self, node_id: int) -> bool:
         # CHI / OpenStack baremetal action: baremetal node power on
@@ -33,11 +54,9 @@ class ChameleonProvider(NodeProvider):
         return PowerState.ON
 
     def get_power_metrics(self, node_id: int) -> dict[str, Any] | None:
-        return {
-            "PresentPowerWatts": 180.0,
-            "AveragePowerWatts": 175.0,
-            "PeakPowerWatts": 240.0,
-        }
+        """Power metrics are not supported for chameleon provider."""
+        print("Power metrics are not supported for the chameleon provider.")
+        return None
 
     def provision_node(
         self,

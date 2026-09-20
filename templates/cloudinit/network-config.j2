@@ -1,0 +1,17 @@
+version: 2
+ethernets:
+  main0:
+    {% if mac_address %}
+    match:
+      macaddress: "{{ mac_address }}"
+    {% else %}
+    match:
+      name: "e*"
+    {% endif %}
+    addresses:
+      - {{ node_ip }}/24
+    routes:
+      - to: 0.0.0.0/0
+        via: {{ gateway_ip }}
+    nameservers:
+      addresses: [{{ dns_ip }}]

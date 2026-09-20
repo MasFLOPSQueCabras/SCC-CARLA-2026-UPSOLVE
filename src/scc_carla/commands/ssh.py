@@ -8,6 +8,7 @@ from rich.console import Console
 from scc_carla.config import ClusterSettings
 from scc_carla.http_server import is_running_on_bastion
 from scc_carla.nodes import parse_node_target
+from scc_carla.providers.factory import get_provider
 
 console = Console()
 
@@ -19,6 +20,7 @@ def ssh_command(
     user: str | None = None,
     identity_file: Path | None = None,
     force_tty: bool = False,
+    provider: str | None = None,
 ) -> None:
     ssh_bin = shutil.which("ssh")
     if not ssh_bin:
@@ -70,13 +72,14 @@ def ssh_command(
         ssh_args.append(settings.bastion_ssh_host)
     else:
         # Target is a cluster node (1, 2, or 3)
-        node_ip = settings.get_node_ip(node_id)
-        node_user = user or settings.node_username
+        with get_provider(settings, provider) as prov:
+            node_ip = prov.get_node_ip(node_id)
+            node_user = user or settings.node_username
 
-        if not on_bastion:
-            ssh_args.extend(["-J", settings.bastion_ssh_host])
+            if prov.paths.bastion_ssh_host:
+                ssh_args.extend(["-J", prov.paths.bastion_ssh_host])
 
-        ssh_args.append(f"{node_user}@{node_ip}")
+            ssh_args.append(f"{node_user}@{node_ip}")
 
     # Append command arguments if provided
     if command:

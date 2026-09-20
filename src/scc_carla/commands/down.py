@@ -13,6 +13,7 @@ from scc_carla.http_server import EphemeralRangeHTTPServer
 from scc_carla.nodes import resolve_target_nodes
 from scc_carla.ops import cluster_lock
 from scc_carla.providers.factory import get_provider
+from scc_carla.templating import TemplateEngine
 
 console = Console()
 
@@ -51,14 +52,17 @@ def down_command(
                     for f in as_completed(futures):
                         f.result()
 
-            # Only sweep shared bastion HTTP resources if tearing down all nodes under BMC provider
-            active_prov = provider or settings.provider
-            should_sweep = (reset_db or len(targets) == 3) and active_prov == "bmc"
+            # Only sweep shared bastion HTTP resources if tearing down all nodes under provider with remote serve
+            should_sweep = (
+                reset_db or len(targets) == 3
+            ) and prov.paths.remote_serve_dir is not None
             if should_sweep:
+                template_engine = TemplateEngine()
                 console.print("[cyan]Sweeping cluster background resources...[/cyan]")
                 swept = EphemeralRangeHTTPServer.sweep_remote(
                     settings.bastion_ssh_host,
                     settings.bastion_http_port,
+                    template_engine=template_engine,
                     force=reset_db,
                 )
                 if swept:

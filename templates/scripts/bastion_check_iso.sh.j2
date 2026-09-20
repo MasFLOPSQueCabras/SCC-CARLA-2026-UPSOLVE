@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ISO_CACHE_DIR="${HOME}/.cache/scc_carla/iso"
+SERVE_DIR="{{ serve_dir }}"
+ISO_NAME="{{ iso_name }}"
+
+mkdir -p "${ISO_CACHE_DIR}" "${SERVE_DIR}"
+
+if [[ -f "${SERVE_DIR}/${ISO_NAME}" ]]; then
+    echo "READY"
+elif [[ -f "${ISO_CACHE_DIR}/${ISO_NAME}" ]]; then
+    cp "${ISO_CACHE_DIR}/${ISO_NAME}" "${SERVE_DIR}/${ISO_NAME}"
+    echo "COPIED"
+else
+    echo "MISSING"
+fi

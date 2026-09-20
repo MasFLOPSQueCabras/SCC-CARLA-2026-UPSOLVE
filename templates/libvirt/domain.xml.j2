@@ -5,10 +5,6 @@
   <vcpu placement='static'>{{ vcpu | default(2) }}</vcpu>
   <os>
     <type arch='x86_64' machine='q35'>hvm</type>
-    <boot dev='hd'/>
-    {% if cdrom_path %}
-    <boot dev='cdrom'/>
-    {% endif %}
   </os>
   <features>
     <acpi/>
@@ -25,6 +21,7 @@
       <driver name='qemu' type='qcow2'/>
       <source file='{{ disk_path }}'/>
       <target dev='vda' bus='virtio'/>
+      <boot order='1'/>
     </disk>
     {% if cdrom_path %}
     <disk type='file' device='cdrom'>
@@ -32,9 +29,21 @@
       <source file='{{ cdrom_path }}'/>
       <target dev='sda' bus='sata'/>
       <readonly/>
+      <boot order='2'/>
+    </disk>
+    {% endif %}
+    {% if oemdrv_path %}
+    <disk type='file' device='disk'>
+      <driver name='qemu' type='raw'/>
+      <source file='{{ oemdrv_path }}'/>
+      <target dev='vdb' bus='virtio'/>
+      <readonly/>
     </disk>
     {% endif %}
     <interface type='network'>
+      {% if mac_address %}
+      <mac address='{{ mac_address }}'/>
+      {% endif %}
       <source network='{{ network | default("default") }}'/>
       <model type='virtio'/>
     </interface>

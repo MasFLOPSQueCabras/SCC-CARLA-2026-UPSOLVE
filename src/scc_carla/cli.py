@@ -12,6 +12,7 @@ from scc_carla.commands.bios import (
     bios_show_command,
 )
 from scc_carla.commands.configure import configure_command
+from scc_carla.commands.deploy import deploy_command
 from scc_carla.commands.down import down_command
 from scc_carla.commands.power import (
     power_metrics_command,
@@ -109,6 +110,15 @@ def up(
             help="Node provider to use (libvirt, bmc, or chameleon)",
         ),
     ] = None,
+    image: Annotated[
+        str | None,
+        typer.Option(
+            "--image",
+            "--iso",
+            "-i",
+            help="Path or URL to OS image (.qcow2 cloud image or .iso installer)",
+        ),
+    ] = None,
 ) -> None:
     """Provision cluster node OS and run configuration in parallel."""
     settings = get_settings()
@@ -121,6 +131,86 @@ def up(
         no_timeout=no_timeout,
         force_lock=force_lock,
         provider=provider,
+        image=image,
+    )
+
+
+@app.command("deploy")
+@app.command("provision")
+def deploy(
+    node: Annotated[
+        list[int] | None,
+        typer.Option(
+            "--node",
+            "-n",
+            help="Node ID(s) to deploy (1, 2, or 3). Defaults to all nodes [1, 2, 3].",
+        ),
+    ] = None,
+    pubkey: Annotated[
+        Path | None, typer.Option("--pubkey", "-k", help="Path to SSH public key")
+    ] = None,
+    bios_profile: Annotated[
+        BiosProfile,
+        typer.Option(
+            "--bios-profile",
+            "-b",
+            help="BIOS profile to configure (hpc, baseline, low_latency)",
+        ),
+    ] = BiosProfile.HPC,
+    poll_timeout: Annotated[
+        int,
+        typer.Option(
+            "--poll-timeout",
+            "-t",
+            help="Polling timeout in seconds for installation completion",
+        ),
+    ] = 1800,
+    no_timeout: Annotated[
+        bool,
+        typer.Option(
+            "--no-timeout",
+            help="Disable polling timeout and wait indefinitely until installation completes",
+        ),
+    ] = False,
+    force_lock: Annotated[
+        bool,
+        typer.Option(
+            "--force-lock",
+            "--force",
+            "-f",
+            help="Override and break any conflicting operational locks",
+        ),
+    ] = False,
+    provider: Annotated[
+        str | None,
+        typer.Option(
+            "--provider",
+            "-P",
+            help="Node provider to use (libvirt, bmc, or chameleon)",
+        ),
+    ] = None,
+    image: Annotated[
+        str | None,
+        typer.Option(
+            "--image",
+            "--iso",
+            "-i",
+            help="Path or URL to OS image (.qcow2 cloud image or .iso installer)",
+        ),
+    ] = None,
+) -> None:
+    """Deploy cluster node OS image and wait for SSH without running Ansible."""
+    settings = get_settings()
+    deploy_command(
+        settings,
+        node=node,
+        pubkey_path=pubkey,
+        poll_timeout=poll_timeout,
+        bios_profile=bios_profile,
+        no_timeout=no_timeout,
+        force_lock=force_lock,
+        provider=provider,
+        image=image,
     )
 
 
@@ -232,6 +322,14 @@ def configure(
             help="Only execute tasks matching specified tags",
         ),
     ] = None,
+    provider: Annotated[
+        str | None,
+        typer.Option(
+            "--provider",
+            "-P",
+            help="Node provider to configure (libvirt, bmc, or chameleon)",
+        ),
+    ] = None,
 ) -> None:
     """Configure cluster nodes idempotently via Ansible."""
     settings = get_settings()
@@ -242,6 +340,7 @@ def configure(
         limit=limit,
         check=check,
         tags=tags,
+        provider=provider,
     )
 
 
@@ -293,6 +392,14 @@ def ssh_cli(
             help="Force pseudo-terminal allocation (ssh -t)",
         ),
     ] = False,
+    provider: Annotated[
+        str | None,
+        typer.Option(
+            "--provider",
+            "-P",
+            help="Node provider to use (libvirt, bmc, or chameleon)",
+        ),
+    ] = None,
 ) -> None:
     """Open an interactive SSH shell or execute commands on a cluster node or bastion."""
     settings = get_settings()
@@ -311,6 +418,7 @@ def ssh_cli(
         user=user,
         identity_file=identity_file,
         force_tty=force_tty,
+        provider=provider,
     )
 
 

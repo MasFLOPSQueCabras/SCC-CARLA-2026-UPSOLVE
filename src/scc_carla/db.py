@@ -15,6 +15,7 @@ import turso
 
 from scc_carla.config import ClusterSettings
 from scc_carla.http_server import is_running_on_bastion
+from scc_carla.paths import get_local_db_path
 from scc_carla.state_worker import execute_action, get_file_hash
 
 logger = logging.getLogger(__name__)
@@ -71,9 +72,9 @@ def _ensure_worker_synced(settings: ClusterSettings) -> None:
         local_worker_path = Path(__file__).with_name("state_worker.py")
         local_hash = get_file_hash(local_worker_path)
 
-        remote_dir = "~/.config/scc_carla"
-        remote_hash_file = f"{remote_dir}/state_worker.hash"
-        remote_worker_file = f"{remote_dir}/state_worker.py"
+        remote_dir = Path.home() / ".config" / "scc_carla"
+        remote_hash_file = remote_dir / "state_worker.hash"
+        remote_worker_file = remote_dir / "state_worker.py"
 
         check_cmd = [
             "ssh",
@@ -220,7 +221,7 @@ def _dispatch_db_action(
             local_db_path = (
                 os.path.expanduser(settings.bastion_state_db_path)
                 if is_running_on_bastion(settings.bastion_hostname)
-                else os.path.expanduser("~/.config/scc_carla/local_state.db")
+                else str(get_local_db_path().resolve())
             )
             os.makedirs(os.path.dirname(local_db_path), exist_ok=True)
             db_is_new = (

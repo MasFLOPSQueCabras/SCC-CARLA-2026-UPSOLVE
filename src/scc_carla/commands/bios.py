@@ -31,6 +31,12 @@ def bios_show_command(
     settings: ClusterSettings,
     node: int | list[int] | None = None,
 ) -> None:
+    if settings.provider != "bmc":
+        console.print(
+            f"[yellow]BIOS operations are not supported for provider '{settings.provider}'.[/yellow]"
+        )
+        return
+
     try:
         target_nodes = resolve_target_nodes(node)
     except ValueError as e:
@@ -80,6 +86,12 @@ def bios_backup_command(
     node: int = 1,
     output: Path | None = None,
 ) -> None:
+    if settings.provider != "bmc":
+        console.print(
+            f"[yellow]BIOS operations are not supported for provider '{settings.provider}'.[/yellow]"
+        )
+        return
+
     hostname = settings.get_hostname(node)
     dest_path = output or Path(f"bios_{hostname}_backup.json")
 
@@ -100,12 +112,43 @@ def bios_backup_command(
         )
 
 
+def _stage_node_bios(
+    bmc: BMCController,
+    settings: ClusterSettings,
+    node: int,
+    profile_val: str,
+    attrs: dict[str, Any],
+) -> None:
+    hostname = settings.get_hostname(node)
+    with console.status(
+        f"[cyan]Staging '{profile_val}' BIOS profile on {hostname}...[/cyan]"
+    ):
+        success = bmc.set_bios_settings(node, attrs)
+
+    if success:
+        update_node_state(settings, node, bios_profile=profile_val)
+        console.print(
+            f"[green]✓[/green] Staged '{profile_val}' profile on {hostname}. "
+            "[dim](Changes take effect after next reboot)[/dim]"
+        )
+    else:
+        console.print(
+            f"[bold red]Failed to stage BIOS profile on {hostname}.[/bold red]"
+        )
+
+
 def bios_apply_command(
     settings: ClusterSettings,
     node: int | list[int] | None = None,
     profile: BiosProfile = BiosProfile.HPC,
     force_lock: bool = False,
 ) -> None:
+    if settings.provider != "bmc":
+        console.print(
+            f"[yellow]BIOS operations are not supported for provider '{settings.provider}'.[/yellow]"
+        )
+        return
+
     try:
         target_nodes = resolve_target_nodes(node)
     except ValueError as e:
@@ -125,22 +168,7 @@ def bios_apply_command(
             BMCController(settings) as bmc,
         ):
             for n in target_nodes:
-                hostname = settings.get_hostname(n)
-                with console.status(
-                    f"[cyan]Staging '{profile.value}' BIOS profile on {hostname}...[/cyan]"
-                ):
-                    success = bmc.set_bios_settings(n, attrs)
-
-                if success:
-                    update_node_state(settings, n, bios_profile=profile.value)
-                    console.print(
-                        f"[green]✓[/green] Staged '{profile.value}' profile on {hostname}. "
-                        "[dim](Changes take effect after next reboot)[/dim]"
-                    )
-                else:
-                    console.print(
-                        f"[bold red]Failed to stage BIOS profile on {hostname}.[/bold red]"
-                    )
+                _stage_node_bios(bmc, settings, n, profile.value, attrs)
     except LockError as e:
         console.print(f"[bold red]Lock conflict: {e}[/bold red]")
         console.print(
