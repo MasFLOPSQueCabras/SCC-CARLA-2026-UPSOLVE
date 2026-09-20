@@ -2,17 +2,16 @@ import mmap
 import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextlib import nullcontext
 from pathlib import Path
 
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 
 from scc_carla.bios import BiosProfile, get_profile_attributes
-from scc_carla.bmc import BMCController
 from scc_carla.commands.configure import configure_command
 from scc_carla.config import ClusterSettings
 from scc_carla.db import (
-    ClusterLock,
     LockError,
     NodeLifecycle,
     ensure_db,
@@ -21,6 +20,12 @@ from scc_carla.db import (
 )
 from scc_carla.http_server import EphemeralRangeHTTPServer, is_running_on_bastion
 from scc_carla.nodes import resolve_target_nodes
+from scc_carla.ops import cluster_lock
+from scc_carla.providers.base import NodeProvider
+from scc_carla.providers.bmc import BMCProvider
+from scc_carla.providers.chameleon import ChameleonProvider
+from scc_carla.providers.factory import get_provider
+from scc_carla.providers.libvirt import LibvirtProvider
 from scc_carla.ssh import is_ssh_authenticated
 from scc_carla.templating import TemplateEngine
 
@@ -148,7 +153,7 @@ def _provision_single_node(
     pubkey: str,
     template_engine: TemplateEngine,
     local_staging_dir: Path,
-    bmc: BMCController,
+    prov: NodeProvider,
     poll_timeout: int,
     progress: Progress,
     task_id: int,
@@ -162,7 +167,7 @@ def _provision_single_node(
 
     progress.update(
         task_id,
-        description=f"[bold cyan]{hostname}[/bold cyan]: Staging kickstart & OEMDRV...",
+        description=f"[bold cyan]{hostname}[/bold cyan]: Staging kickstart & configuration...",
     )
     update_node_state(
         settings,
@@ -182,58 +187,105 @@ def _provision_single_node(
     }
 
     ks_cfg_path = local_staging_dir / f"ks_node{node}.cfg"
-    oemdrv_name = f"oemdrv_node{node}.img"
-    oemdrv_path = local_staging_dir / oemdrv_name
-
     template_engine.render_to_file("kickstart/ks.cfg.j2", context, ks_cfg_path)
-    _generate_oemdrv(ks_cfg_path, oemdrv_path)
 
-    # Stage OEMDRV image to bastion HTTP serving directory
-    on_bastion = is_running_on_bastion(settings.bastion_hostname)
-    if on_bastion:
-        dest_path = Path(remote_serve_dir).expanduser() / oemdrv_name
-        dest_path.write_bytes(oemdrv_path.read_bytes())
-    else:
-        subprocess.run(
-            [
-                "scp",
-                "-q",
-                str(oemdrv_path),
-                f"{settings.bastion_ssh_host}:{remote_serve_dir}/{oemdrv_name}",
-            ],
-            check=True,
-        )
+    match prov:
+        case BMCProvider() as bmc_prov:
+            oemdrv_name = f"oemdrv_node{node}.img"
+            oemdrv_path = local_staging_dir / oemdrv_name
+            _generate_oemdrv(ks_cfg_path, oemdrv_path)
 
-    # 1. Stage BIOS Profile Attributes via Redfish
-    progress.update(
-        task_id,
-        description=f"[bold cyan]{hostname}[/bold cyan]: Configuring BIOS '{bios_profile.value}' profile...",
-    )
-    bios_attrs = get_profile_attributes(bios_profile)
-    bmc.set_bios_settings(node, bios_attrs)
+            on_bastion = is_running_on_bastion(settings.bastion_hostname)
+            if on_bastion:
+                dest_path = Path(remote_serve_dir).expanduser() / oemdrv_name
+                dest_path.write_bytes(oemdrv_path.read_bytes())
+            else:
+                subprocess.run(
+                    [
+                        "scp",
+                        "-q",
+                        str(oemdrv_path),
+                        f"{settings.bastion_ssh_host}:{remote_serve_dir}/{oemdrv_name}",
+                    ],
+                    check=True,
+                )
 
-    # 2. Virtual Media Mount & Reboot
-    iso_url = f"http://{settings.bastion_http_ip}:{settings.bastion_http_port}/{settings.iso_name}"
-    oemdrv_url = (
-        f"http://{settings.bastion_http_ip}:{settings.bastion_http_port}/{oemdrv_name}"
-    )
+            progress.update(
+                task_id,
+                description=f"[bold cyan]{hostname}[/bold cyan]: Configuring BIOS '{bios_profile.value}' profile...",
+            )
+            bios_attrs = get_profile_attributes(bios_profile)
+            bmc_prov.set_bios_settings(node, bios_attrs)
 
-    progress.update(
-        task_id,
-        description=f"[bold cyan]{hostname}[/bold cyan]: Mounting Virtual Media & triggering boot...",
-    )
-    if not bmc.mount_and_boot(node, iso_url=iso_url, floppy_url=oemdrv_url):
-        progress.update(
-            task_id,
-            description=f"[bold red]✗ {hostname}[/bold red]: Failed to mount and boot.",
-            completed=100,
-        )
-        update_node_state(settings, node, NodeLifecycle.OFFLINE)
-        return False
+            iso_url = f"http://{settings.bastion_http_ip}:{settings.bastion_http_port}/{settings.iso_name}"
+            oemdrv_url = f"http://{settings.bastion_http_ip}:{settings.bastion_http_port}/{oemdrv_name}"
+
+            progress.update(
+                task_id,
+                description=f"[bold cyan]{hostname}[/bold cyan]: Mounting Virtual Media & triggering boot...",
+            )
+            if not bmc_prov.provision_node(
+                node,
+                ks_cfg_path=ks_cfg_path,
+                pubkey=pubkey,
+                bios_profile=bios_profile.value,
+                iso_url=iso_url,
+                oemdrv_url=oemdrv_url,
+            ):
+                progress.update(
+                    task_id,
+                    description=f"[bold red]✗ {hostname}[/bold red]: Failed to mount and boot.",
+                    completed=100,
+                )
+                update_node_state(settings, node, NodeLifecycle.OFFLINE)
+                return False
+
+        case LibvirtProvider() as libvirt_prov:
+            progress.update(
+                task_id,
+                description=f"[bold cyan]{hostname}[/bold cyan]: Bootstrapping local VM domain...",
+            )
+            cache_dir = Path.home() / ".cache" / "scc_carla" / "iso"
+            iso_path = cache_dir / settings.iso_name
+            if not libvirt_prov.provision_node(
+                node,
+                ks_cfg_path=ks_cfg_path,
+                pubkey=pubkey,
+                bios_profile=bios_profile.value,
+                iso_path=iso_path if iso_path.exists() else None,
+            ):
+                progress.update(
+                    task_id,
+                    description=f"[bold red]✗ {hostname}[/bold red]: Failed to provision VM.",
+                    completed=100,
+                )
+                update_node_state(settings, node, NodeLifecycle.OFFLINE)
+                return False
+
+        case ChameleonProvider() as cham_prov:
+            progress.update(
+                task_id,
+                description=f"[bold cyan]{hostname}[/bold cyan]: Deploying Chameleon bare-metal node...",
+            )
+            if not cham_prov.provision_node(
+                node,
+                ks_cfg_path=ks_cfg_path,
+                pubkey=pubkey,
+                bios_profile=bios_profile.value,
+            ):
+                progress.update(
+                    task_id,
+                    description=f"[bold red]✗ {hostname}[/bold red]: Failed to deploy Chameleon node.",
+                    completed=100,
+                )
+                update_node_state(settings, node, NodeLifecycle.OFFLINE)
+                return False
 
     start_time = time.time()
     ssh_ready = False
-    timeout_suffix = " (no timeout)" if (no_timeout or poll_timeout <= 0) else ""
+    timeout_suffix = (
+        " (no timeout)" if (no_timeout or poll_timeout <= 0) else ""
+    )
 
     progress.update(
         task_id,
@@ -241,7 +293,11 @@ def _provision_single_node(
     )
 
     while True:
-        if not no_timeout and poll_timeout > 0 and (time.time() - start_time >= poll_timeout):
+        if (
+            not no_timeout
+            and poll_timeout > 0
+            and (time.time() - start_time >= poll_timeout)
+        ):
             break
         if is_ssh_authenticated(
             node_ip, settings.node_username, key_path=privkey_path
@@ -264,11 +320,16 @@ def _provision_single_node(
         task_id,
         description=(
             f"[bold cyan]{hostname}[/bold cyan]: SSH online ({elapsed_install // 60}m {elapsed_install % 60}s). "
-            "Ejecting media & running Ansible (node_independent)..."
+            "Running Ansible (node_independent)..."
         ),
     )
 
-    bmc.eject_virtual_media(node)
+    match prov:
+        case BMCProvider() as bmc_prov:
+            bmc_prov.eject_virtual_media(node)
+        case _:
+            pass
+
     update_node_state(
         settings,
         node,
@@ -277,7 +338,7 @@ def _provision_single_node(
         bios_profile=bios_profile.value,
     )
 
-    # 3. Execute Node-Independent Ansible configuration in parallel
+    # Execute Node-Independent Ansible configuration in parallel
     ansible_ok = configure_command(
         settings,
         limit=hostname,
@@ -311,25 +372,19 @@ def _provision_single_node(
 def up_command(
     settings: ClusterSettings,
     node: int | list[int] | None = None,
-    all_nodes: bool = False,
     pubkey_path: Path | None = None,
     poll_timeout: int = 1800,
     bios_profile: BiosProfile = BiosProfile.HPC,
     no_timeout: bool = False,
-    force: bool = False,
+    force_lock: bool = False,
+    provider: str | None = None,
 ) -> None:
     ensure_db(settings)
 
     try:
-        target_nodes = resolve_target_nodes(node, all_nodes)
+        target_nodes = resolve_target_nodes(node)
     except ValueError as e:
         console.print(f"[bold red]{e}[/bold red]")
-        return
-
-    if not target_nodes:
-        console.print("[cyan]Initializing cluster state...[/cyan]")
-        console.print("[green]✓[/green] State database ready")
-        console.print("[bold green]Cluster foundation is up.[/bold green]")
         return
 
     key_file = (
@@ -354,118 +409,135 @@ def up_command(
     local_staging_dir.mkdir(parents=True, exist_ok=True)
     template_engine = TemplateEngine()
 
-    resources = [f"node-{n}" for n in target_nodes]
     try:
         with (
-            ClusterLock(
-                settings, resources=resources, operation="up", force=force
+            cluster_lock(
+                settings,
+                targets=target_nodes,
+                operation="up",
+                force=force_lock,
             ),
-            BMCController(settings) as bmc,
-            EphemeralRangeHTTPServer(
-                port=settings.bastion_http_port,
-                bind_ip=settings.bastion_http_ip,
-                bastion_ssh_host=settings.bastion_ssh_host,
-                bastion_hostname=settings.bastion_hostname,
-                remote_serve_dir="~/scc_serve",
-            ),
+            get_provider(settings, provider) as prov,
         ):
-            _ensure_bastion_iso(settings, remote_serve_dir="~/scc_serve")
-
+            active_prov_name = provider or settings.provider
             console.print(
-                f"[cyan]Initiating parallel provisioning across {len(target_nodes)} target node(s)...[/cyan]"
+                f"[cyan]Active Provider: [bold]{active_prov_name}[/bold][/cyan]"
             )
 
-            progress = Progress(
-                SpinnerColumn(),
-                TextColumn("[progress.description]{task.description}"),
-                TimeElapsedColumn(),
-                console=console,
-            )
-
-            results: dict[int, bool] = {}
-            with progress:
-                node_tasks = {
-                    n: progress.add_task(
-                        f"[bold cyan]{settings.get_hostname(n)}[/bold cyan]: Initializing...",
-                        total=None,
+            # BMC provider requires ephemeral HTTP server for virtual media
+            match prov:
+                case BMCProvider():
+                    http_ctx = EphemeralRangeHTTPServer(
+                        port=settings.bastion_http_port,
+                        bind_ip=settings.bastion_http_ip,
+                        bastion_ssh_host=settings.bastion_ssh_host,
+                        bastion_hostname=settings.bastion_hostname,
+                        remote_serve_dir="~/scc_serve",
                     )
-                    for n in target_nodes
-                }
+                    _ensure_bastion_iso(settings, remote_serve_dir="~/scc_serve")
+                case _:
+                    http_ctx = nullcontext()
 
-                with ThreadPoolExecutor(max_workers=len(target_nodes)) as executor:
-                    futures = {
-                        executor.submit(
-                            _provision_single_node,
-                            settings=settings,
-                            node=n,
-                            pubkey=pubkey,
-                            template_engine=template_engine,
-                            local_staging_dir=local_staging_dir,
-                            bmc=bmc,
-                            poll_timeout=poll_timeout,
-                            progress=progress,
-                            task_id=node_tasks[n],
-                            bios_profile=bios_profile,
-                            privkey_path=privkey_file,
-                            remote_serve_dir="~/scc_serve",
-                            no_timeout=no_timeout,
-                        ): n
+            with http_ctx:
+                console.print(
+                    f"[cyan]Initiating parallel provisioning across {len(target_nodes)} target node(s)...[/cyan]"
+                )
+
+                progress = Progress(
+                    SpinnerColumn(),
+                    TextColumn("[progress.description]{task.description}"),
+                    TimeElapsedColumn(),
+                    console=console,
+                )
+
+                results: dict[int, bool] = {}
+                with progress:
+                    node_tasks = {
+                        n: progress.add_task(
+                            f"[bold cyan]{settings.get_hostname(n)}[/bold cyan]: Initializing...",
+                            total=None,
+                        )
                         for n in target_nodes
                     }
 
-                    for future in as_completed(futures):
-                        n = futures[future]
-                        try:
-                            results[n] = future.result()
-                        except Exception as exc:  # noqa: BLE001
-                            results[n] = False
-                            progress.update(
-                                node_tasks[n],
-                                description=f"[bold red]✗ {settings.get_hostname(n)}[/bold red]: Exception: {exc}",
-                                completed=100,
-                            )
+                    with ThreadPoolExecutor(
+                        max_workers=len(target_nodes)
+                    ) as executor:
+                        futures = {
+                            executor.submit(
+                                _provision_single_node,
+                                settings=settings,
+                                node=n,
+                                pubkey=pubkey,
+                                template_engine=template_engine,
+                                local_staging_dir=local_staging_dir,
+                                prov=prov,
+                                poll_timeout=poll_timeout,
+                                progress=progress,
+                                task_id=node_tasks[n],
+                                bios_profile=bios_profile,
+                                privkey_path=privkey_file,
+                                remote_serve_dir="~/scc_serve",
+                                no_timeout=no_timeout,
+                            ): n
+                            for n in target_nodes
+                        }
 
-            # Check if all 3 cluster nodes are ready to run cluster coordination
-            try:
-                all_cluster_nodes = get_all_nodes(settings)
-                all_3_online = len(all_cluster_nodes) == 3 and all(
-                    cn.state in (NodeLifecycle.READY, NodeLifecycle.BOOTSTRAPPED)
-                    for cn in all_cluster_nodes
-                )
-                if all_3_online:
-                    console.print(
-                        "\n[cyan]All 3 cluster nodes online! Running cluster-wide coordination (SSH trust, MPI hostfile, InfiniBand)...[/cyan]"
-                    )
-                    coord_ok = configure_command(
-                        settings,
-                        all_nodes=True,
-                        tags="cluster_coordination",
-                        exit_on_error=False,
-                    )
-                    if coord_ok:
-                        console.print(
-                            "[bold green]✓ Full 3-node cluster coordinated and verified for MPI/HPL.[/bold green]"
-                        )
-                    else:
-                        console.print(
-                            "[bold yellow]⚠ Cluster coordination completed with non-fatal warnings.[/bold yellow]"
-                        )
-                else:
-                    ready_count = sum(
-                        1
-                        for cn in all_cluster_nodes
-                        if cn.state
+                        for future in as_completed(futures):
+                            n = futures[future]
+                            try:
+                                results[n] = future.result()
+                            except Exception as exc:  # noqa: BLE001
+                                results[n] = False
+                                progress.update(
+                                    node_tasks[n],
+                                    description=f"[bold red]✗ {settings.get_hostname(n)}[/bold red]: Exception: {exc}",
+                                    completed=100,
+                                )
+
+                # Check if all 3 cluster nodes are ready to run cluster coordination
+                try:
+                    all_cluster_nodes = get_all_nodes(settings)
+                    all_3_online = len(all_cluster_nodes) == 3 and all(
+                        cn.state
                         in (NodeLifecycle.READY, NodeLifecycle.BOOTSTRAPPED)
+                        for cn in all_cluster_nodes
                     )
+                    if all_3_online:
+                        console.print(
+                            "\n[cyan]All 3 cluster nodes online! Running cluster-wide coordination (SSH trust, MPI hostfile, InfiniBand)...[/cyan]"
+                        )
+                        coord_ok = configure_command(
+                            settings,
+                            tags="cluster_coordination",
+                            exit_on_error=False,
+                        )
+                        if coord_ok:
+                            console.print(
+                                "[bold green]✓ Full 3-node cluster coordinated and verified for MPI/HPL.[/bold green]"
+                            )
+                        else:
+                            console.print(
+                                "[bold yellow]⚠ Cluster coordination completed with non-fatal warnings.[/bold yellow]"
+                            )
+                    else:
+                        ready_count = sum(
+                            1
+                            for cn in all_cluster_nodes
+                            if cn.state
+                            in (NodeLifecycle.READY, NodeLifecycle.BOOTSTRAPPED)
+                        )
+                        console.print(
+                            f"\n[dim]Active nodes: {ready_count}/3. Cluster-wide coordination will run when all 3 nodes are online.[/dim]"
+                        )
+                except Exception as e:  # noqa: BLE001
                     console.print(
-                        f"\n[dim]Active nodes: {ready_count}/3. Cluster-wide coordination will run when all 3 nodes are online.[/dim]"
+                        f"[dim]Could not evaluate cluster coordination: {e}[/dim]"
                     )
-            except Exception as e:  # noqa: BLE001
-                console.print(f"[dim]Could not evaluate cluster coordination: {e}[/dim]")
 
     except LockError as e:
         console.print(f"[bold red]Lock conflict: {e}[/bold red]")
         console.print(
-            "[dim]Tip: Use --force to override or 'scc-carla lock list' to view active locks.[/dim]"
+            "[dim]Tip: Use --force-lock to override or 'scc-carla lock list' to view active locks.[/dim]"
         )
         return

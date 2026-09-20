@@ -43,7 +43,7 @@ app.add_typer(bios_app, name="bios")
 
 power_app = typer.Typer(
     name="power",
-    help="Inspect and control bare-metal node power states",
+    help="Inspect and control cluster node power states",
     no_args_is_help=True,
 )
 app.add_typer(power_app, name="power")
@@ -60,12 +60,12 @@ app.add_typer(lock_app, name="lock")
 def up(
     node: Annotated[
         list[int] | None,
-        typer.Option("--node", "-n", help="Node ID(s) to provision (1, 2, or 3)"),
+        typer.Option(
+            "--node",
+            "-n",
+            help="Node ID(s) to provision (1, 2, or 3). Defaults to all nodes [1, 2, 3].",
+        ),
     ] = None,
-    all_nodes: Annotated[
-        bool,
-        typer.Option("--all", "-a", help="Provision all nodes (1, 2, and 3)"),
-    ] = False,
     pubkey: Annotated[
         Path | None, typer.Option("--pubkey", "-k", help="Path to SSH public key")
     ] = None,
@@ -92,25 +92,35 @@ def up(
             help="Disable polling timeout and wait indefinitely until installation completes",
         ),
     ] = False,
-    force: Annotated[
+    force_lock: Annotated[
         bool,
         typer.Option(
+            "--force-lock",
             "--force",
             "-f",
             help="Override and break any conflicting operational locks",
         ),
     ] = False,
+    provider: Annotated[
+        str | None,
+        typer.Option(
+            "--provider",
+            "-P",
+            help="Node provider to use (libvirt, bmc, or chameleon)",
+        ),
+    ] = None,
 ) -> None:
+    """Provision cluster node OS and run configuration in parallel."""
     settings = get_settings()
     up_command(
         settings,
         node=node,
-        all_nodes=all_nodes,
         pubkey_path=pubkey,
         poll_timeout=poll_timeout,
         bios_profile=bios_profile,
         no_timeout=no_timeout,
-        force=force,
+        force_lock=force_lock,
+        provider=provider,
     )
 
 
@@ -118,32 +128,42 @@ def up(
 def down(
     node: Annotated[
         list[int] | None,
-        typer.Option("--node", "-n", help="Node ID(s) to decommission (1, 2, or 3)"),
+        typer.Option(
+            "--node",
+            "-n",
+            help="Node ID(s) to decommission (1, 2, or 3). Defaults to all nodes [1, 2, 3].",
+        ),
     ] = None,
-    all_nodes: Annotated[
-        bool,
-        typer.Option("--all", "-a", help="Decommission all nodes (1, 2, and 3)"),
-    ] = False,
     reset_db: Annotated[
         bool,
         typer.Option("--reset-db", "-r", help="Reset node states in database"),
     ] = False,
-    force: Annotated[
+    force_lock: Annotated[
         bool,
         typer.Option(
+            "--force-lock",
             "--force",
             "-f",
             help="Override and break any conflicting operational locks",
         ),
     ] = False,
+    provider: Annotated[
+        str | None,
+        typer.Option(
+            "--provider",
+            "-P",
+            help="Node provider to use (libvirt, bmc, or chameleon)",
+        ),
+    ] = None,
 ) -> None:
+    """Tear down and decommission cluster node(s)."""
     settings = get_settings()
     down_command(
         settings,
         node=node,
-        all_nodes=all_nodes,
         reset_db=reset_db,
-        force=force,
+        force_lock=force_lock,
+        provider=provider,
     )
 
 
@@ -156,9 +176,18 @@ def status(
             help="Perform live hardware & network probing across cluster nodes",
         ),
     ] = True,
+    provider: Annotated[
+        str | None,
+        typer.Option(
+            "--provider",
+            "-P",
+            help="Node provider to inspect (libvirt, bmc, or chameleon)",
+        ),
+    ] = None,
 ) -> None:
+    """Inspect current cluster state, node lifecycles, and operational locks."""
     settings = get_settings()
-    status_command(settings, probe=probe)
+    status_command(settings, probe=probe, provider=provider)
 
 
 @app.command("configure")
@@ -176,17 +205,9 @@ def configure(
         typer.Option(
             "--node",
             "-n",
-            help="Node ID(s) to configure (1, 2, or 3)",
+            help="Node ID(s) to configure (1, 2, or 3). Defaults to all nodes [1, 2, 3].",
         ),
     ] = None,
-    all_nodes: Annotated[
-        bool,
-        typer.Option(
-            "--all",
-            "-a",
-            help="Configure all cluster nodes (1, 2, and 3)",
-        ),
-    ] = False,
     limit: Annotated[
         str | None,
         typer.Option(
@@ -217,7 +238,6 @@ def configure(
     configure_command(
         settings,
         node=node,
-        all_nodes=all_nodes,
         playbook=playbook,
         limit=limit,
         check=check,
@@ -297,16 +317,17 @@ def ssh_cli(
 @bios_app.command("show")
 def bios_show(
     node: Annotated[
-        int | None,
-        typer.Option("--node", "-n", help="Node ID to inspect (1, 2, or 3)"),
+        list[int] | None,
+        typer.Option(
+            "--node",
+            "-n",
+            help="Node ID(s) to inspect (1, 2, or 3). Defaults to all nodes [1, 2, 3].",
+        ),
     ] = None,
-    all_nodes: Annotated[
-        bool,
-        typer.Option("--all", "-a", help="Inspect all nodes (1, 2, and 3)"),
-    ] = False,
 ) -> None:
+    """Inspect active and pending BIOS settings via BMC."""
     settings = get_settings()
-    bios_show_command(settings, node=node, all_nodes=all_nodes)
+    bios_show_command(settings, node=node)
 
 
 @bios_app.command("backup")
@@ -320,6 +341,7 @@ def bios_backup(
         typer.Option("--output", "-o", help="Output JSON path for backup"),
     ] = None,
 ) -> None:
+    """Export complete BIOS attribute JSON dump for a node."""
     settings = get_settings()
     bios_backup_command(settings, node=node, output=output)
 
@@ -327,13 +349,13 @@ def bios_backup(
 @bios_app.command("apply")
 def bios_apply(
     node: Annotated[
-        int | None,
-        typer.Option("--node", "-n", help="Node ID to configure (1, 2, or 3)"),
+        list[int] | None,
+        typer.Option(
+            "--node",
+            "-n",
+            help="Node ID(s) to configure (1, 2, or 3). Defaults to all nodes [1, 2, 3].",
+        ),
     ] = None,
-    all_nodes: Annotated[
-        bool,
-        typer.Option("--all", "-a", help="Configure all nodes (1, 2, and 3)"),
-    ] = False,
     profile: Annotated[
         BiosProfile,
         typer.Option(
@@ -342,22 +364,23 @@ def bios_apply(
             help="BIOS profile to apply (hpc, baseline, low_latency)",
         ),
     ] = BiosProfile.HPC,
-    force: Annotated[
+    force_lock: Annotated[
         bool,
         typer.Option(
+            "--force-lock",
             "--force",
             "-f",
             help="Override and break any conflicting operational locks",
         ),
     ] = False,
 ) -> None:
+    """Stage a pre-tuned BIOS profile on target nodes."""
     settings = get_settings()
     bios_apply_command(
         settings,
         node=node,
-        all_nodes=all_nodes,
         profile=profile,
-        force=force,
+        force_lock=force_lock,
     )
 
 
@@ -423,13 +446,13 @@ def lock_release(
 @power_app.command("on")
 def power_on(
     node: Annotated[
-        int | None,
-        typer.Option("--node", "-n", help="Node ID to power on (1, 2, or 3)"),
+        list[int] | None,
+        typer.Option(
+            "--node",
+            "-n",
+            help="Node ID(s) to power on (1, 2, or 3). Defaults to all nodes [1, 2, 3].",
+        ),
     ] = None,
-    all_nodes: Annotated[
-        bool,
-        typer.Option("--all", "-a", help="Power on all nodes (1, 2, and 3)"),
-    ] = False,
     wait: Annotated[
         bool,
         typer.Option(
@@ -448,40 +471,49 @@ def power_on(
     force_lock: Annotated[
         bool,
         typer.Option(
+            "--force-lock",
             "--force",
             "-f",
             help="Override and break conflicting operational locks",
         ),
     ] = False,
+    provider: Annotated[
+        str | None,
+        typer.Option(
+            "--provider",
+            "-P",
+            help="Node provider to use (libvirt, bmc, or chameleon)",
+        ),
+    ] = None,
 ) -> None:
-    """Power on bare-metal cluster node(s) via BMC."""
+    """Power on cluster node(s)."""
     settings = get_settings()
     power_on_command(
         settings,
         node=node,
-        all_nodes=all_nodes,
         wait=wait,
         wait_timeout=wait_timeout,
         force_lock=force_lock,
+        provider=provider,
     )
 
 
 @power_app.command("off")
 def power_off(
     node: Annotated[
-        int | None,
-        typer.Option("--node", "-n", help="Node ID to power off (1, 2, or 3)"),
+        list[int] | None,
+        typer.Option(
+            "--node",
+            "-n",
+            help="Node ID(s) to power off (1, 2, or 3). Defaults to all nodes [1, 2, 3].",
+        ),
     ] = None,
-    all_nodes: Annotated[
-        bool,
-        typer.Option("--all", "-a", help="Power off all nodes (1, 2, and 3)"),
-    ] = False,
     force: Annotated[
         bool,
         typer.Option(
             "--force",
             "-f",
-            help="Force immediate hardware power off (ForceOff) instead of graceful shutdown",
+            help="Force immediate hardware power off instead of graceful shutdown",
         ),
     ] = False,
     wait: Annotated[
@@ -506,36 +538,44 @@ def power_off(
             help="Override and break conflicting operational locks",
         ),
     ] = False,
+    provider: Annotated[
+        str | None,
+        typer.Option(
+            "--provider",
+            "-P",
+            help="Node provider to use (libvirt, bmc, or chameleon)",
+        ),
+    ] = None,
 ) -> None:
-    """Power off bare-metal cluster node(s) gracefully or forcefully."""
+    """Power off cluster node(s) gracefully or forcefully."""
     settings = get_settings()
     power_off_command(
         settings,
         node=node,
-        all_nodes=all_nodes,
         graceful=not force,
         wait=wait,
         wait_timeout=wait_timeout,
         force_lock=force_lock,
+        provider=provider,
     )
 
 
 @power_app.command("restart")
 def power_restart(
     node: Annotated[
-        int | None,
-        typer.Option("--node", "-n", help="Node ID to restart (1, 2, or 3)"),
+        list[int] | None,
+        typer.Option(
+            "--node",
+            "-n",
+            help="Node ID(s) to restart (1, 2, or 3). Defaults to all nodes [1, 2, 3].",
+        ),
     ] = None,
-    all_nodes: Annotated[
-        bool,
-        typer.Option("--all", "-a", help="Restart all nodes (1, 2, and 3)"),
-    ] = False,
     force: Annotated[
         bool,
         typer.Option(
             "--force",
             "-f",
-            help="Force immediate hard reboot (ForceRestart) instead of graceful restart",
+            help="Force immediate hard reboot instead of graceful restart",
         ),
     ] = False,
     wait: Annotated[
@@ -560,46 +600,62 @@ def power_restart(
             help="Override and break conflicting operational locks",
         ),
     ] = False,
+    provider: Annotated[
+        str | None,
+        typer.Option(
+            "--provider",
+            "-P",
+            help="Node provider to use (libvirt, bmc, or chameleon)",
+        ),
+    ] = None,
 ) -> None:
-    """Reboot / restart bare-metal cluster node(s) gracefully or forcefully."""
+    """Reboot / restart cluster node(s) gracefully or forcefully."""
     settings = get_settings()
     power_restart_command(
         settings,
         node=node,
-        all_nodes=all_nodes,
         graceful=not force,
         wait=wait,
         wait_timeout=wait_timeout,
         force_lock=force_lock,
+        provider=provider,
     )
 
 
 @power_app.command("status")
 def power_status(
     node: Annotated[
-        int | None,
-        typer.Option("--node", "-n", help="Node ID to inspect (1, 2, or 3)"),
+        list[int] | None,
+        typer.Option(
+            "--node",
+            "-n",
+            help="Node ID(s) to inspect (1, 2, or 3). Defaults to all nodes [1, 2, 3].",
+        ),
     ] = None,
-    all_nodes: Annotated[
-        bool,
-        typer.Option("--all", "-a", help="Inspect all nodes (1, 2, and 3)"),
-    ] = False,
+    provider: Annotated[
+        str | None,
+        typer.Option(
+            "--provider",
+            "-P",
+            help="Node provider to use (libvirt, bmc, or chameleon)",
+        ),
+    ] = None,
 ) -> None:
-    """Inspect current bare-metal BMC power state across cluster nodes."""
+    """Inspect current power state across cluster nodes."""
     settings = get_settings()
-    power_status_command(settings, node=node, all_nodes=all_nodes)
+    power_status_command(settings, node=node, provider=provider)
 
 
 @power_app.command("metrics")
 def power_metrics(
     node: Annotated[
-        int | None,
-        typer.Option("--node", "-n", help="Node ID to inspect (1, 2, or 3)"),
+        list[int] | None,
+        typer.Option(
+            "--node",
+            "-n",
+            help="Node ID(s) to inspect (1, 2, or 3). Defaults to all nodes [1, 2, 3].",
+        ),
     ] = None,
-    all_nodes: Annotated[
-        bool,
-        typer.Option("--all", "-a", help="Inspect all nodes (1, 2, and 3)"),
-    ] = False,
     watch: Annotated[
         bool,
         typer.Option(
@@ -616,15 +672,23 @@ def power_metrics(
             help="Refresh interval in seconds when streaming with --watch",
         ),
     ] = 2.0,
+    provider: Annotated[
+        str | None,
+        typer.Option(
+            "--provider",
+            "-P",
+            help="Node provider to use (libvirt, bmc, or chameleon)",
+        ),
+    ] = None,
 ) -> None:
-    """Inspect live power draw (Watts, 20-min average, peak) via BMC Redfish."""
+    """Inspect live power draw (Watts, average, peak) across cluster nodes."""
     settings = get_settings()
     power_metrics_command(
         settings,
         node=node,
-        all_nodes=all_nodes,
         watch=watch,
         interval=interval,
+        provider=provider,
     )
 
 

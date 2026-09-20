@@ -146,13 +146,15 @@ def execute_action(
                     )
                 conflicts = cur.fetchall()
                 for c in conflicts:
-                    c_res, c_holder, c_op, c_acq, _c_timeout, c_elapsed = c
-                    if c_holder != holder or c_op != operation:
+                    c_res, c_holder, c_op, c_acq, c_timeout, c_elapsed = c
+                    if (c_holder != holder or c_op != operation) and (
+                        c_elapsed < c_timeout
+                    ):
                         return {
                             "acquired": False,
                             "conflict": (
                                 f"Resource '{c_res}' is locked by {c_holder} for '{c_op}' "
-                                f"since {c_acq} ({c_elapsed}s ago)"
+                                f"since {c_acq} ({c_elapsed}s ago, timeout {c_timeout}s)"
                             ),
                         }
 

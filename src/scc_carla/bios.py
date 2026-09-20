@@ -51,9 +51,11 @@ def load_bios_file(file_path: Path) -> dict[str, Any]:
     """Loads BIOS settings from a JSON file."""
     content = file_path.read_text(encoding="utf-8")
     data = json.loads(content)
-    if isinstance(data, dict):
-        # Handle full redfish dump or raw attribute dict
-        if "Attributes" in data and isinstance(data["Attributes"], dict):
-            return data["Attributes"]
-        return data
-    raise ValueError(f"Invalid BIOS settings JSON file at {file_path}")
+    match data:
+        case {"Attributes": dict() as attrs}:
+            return attrs
+        case dict() as direct_attrs:
+            return direct_attrs
+        case _:
+            raise ValueError(f"Invalid BIOS settings JSON file at {file_path}")
+

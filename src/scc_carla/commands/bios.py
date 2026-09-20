@@ -7,8 +7,9 @@ from rich.table import Table
 from scc_carla.bios import BiosProfile, get_profile_attributes
 from scc_carla.bmc import BMCController
 from scc_carla.config import ClusterSettings
-from scc_carla.db import ClusterLock, LockError, update_node_state
+from scc_carla.db import LockError, update_node_state
 from scc_carla.nodes import resolve_target_nodes
+from scc_carla.ops import cluster_lock
 
 console = Console()
 
@@ -28,17 +29,13 @@ KEY_BIOS_ATTRIBUTES = [
 
 def bios_show_command(
     settings: ClusterSettings,
-    node: int | None = None,
-    all_nodes: bool = False,
+    node: int | list[int] | None = None,
 ) -> None:
     try:
-        target_nodes = resolve_target_nodes(node, all_nodes)
+        target_nodes = resolve_target_nodes(node)
     except ValueError as e:
         console.print(f"[bold red]{e}[/bold red]")
         return
-
-    if not target_nodes:
-        target_nodes = [1, 2, 3]
 
     with BMCController(settings) as bmc:
         for n in target_nodes:
@@ -80,7 +77,7 @@ def bios_show_command(
 
 def bios_backup_command(
     settings: ClusterSettings,
-    node: int,
+    node: int = 1,
     output: Path | None = None,
 ) -> None:
     hostname = settings.get_hostname(node)
@@ -105,31 +102,25 @@ def bios_backup_command(
 
 def bios_apply_command(
     settings: ClusterSettings,
-    node: int | None = None,
-    all_nodes: bool = False,
+    node: int | list[int] | None = None,
     profile: BiosProfile = BiosProfile.HPC,
-    force: bool = False,
+    force_lock: bool = False,
 ) -> None:
     try:
-        target_nodes = resolve_target_nodes(node, all_nodes)
+        target_nodes = resolve_target_nodes(node)
     except ValueError as e:
         console.print(f"[bold red]{e}[/bold red]")
         return
 
-    if not target_nodes:
-        console.print("[bold yellow]No nodes specified. Use -n or -a.[/bold yellow]")
-        return
-
-    resources = [f"node-{n}" for n in target_nodes]
     attrs: dict[str, Any] = get_profile_attributes(profile)
 
     try:
         with (
-            ClusterLock(
+            cluster_lock(
                 settings,
-                resources=resources,
+                targets=target_nodes,
                 operation=f"bios-apply-{profile.value}",
-                force=force,
+                force=force_lock,
             ),
             BMCController(settings) as bmc,
         ):
@@ -153,6 +144,6 @@ def bios_apply_command(
     except LockError as e:
         console.print(f"[bold red]Lock conflict: {e}[/bold red]")
         console.print(
-            "[dim]Tip: Use --force to override or 'scc-carla lock list' to view active locks.[/dim]"
+            "[dim]Tip: Use --force-lock to override or 'scc-carla lock list' to view active locks.[/dim]"
         )
         return

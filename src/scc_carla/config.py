@@ -23,6 +23,12 @@ class ClusterSettings(BaseSettings):
     bmc_user: str = ""
     bmc_password: str = ""
 
+    provider: str = "libvirt"
+    libvirt_uri: str = "qemu:///system"
+    libvirt_pool: str = "default"
+    libvirt_network: str = "default"
+    libvirt_domain_prefix: str = "scc-"
+
     iso_name: str = "Rocky-10.2-x86_64-minimal.iso"
     iso_url: str = (
         "https://download.rockylinux.org/pub/rocky/10/isos/x86_64/Rocky-10.2-x86_64-minimal.iso"

@@ -4,7 +4,6 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from scc_carla.bmc import BMCController
 from scc_carla.config import ClusterSettings
 from scc_carla.db import (
     NodeLifecycle,
@@ -12,22 +11,25 @@ from scc_carla.db import (
     get_all_nodes,
     update_node_state,
 )
+from scc_carla.providers.base import NodeProvider
+from scc_carla.providers.factory import get_provider
 from scc_carla.ssh import is_ssh_authenticated
 
 console = Console()
 
 
 def _probe_node(
-    bmc: BMCController,
+    prov: NodeProvider,
     settings: ClusterSettings,
     node_id: int,
     key_path: Path | None,
 ) -> tuple[int, str, str]:
-    """Probes BMC power and SSH reachability for a node.
+    """Probes provider power status and SSH reachability for a node.
 
     Returns: (node_id, power_status, reachability_status)
     """
-    power = bmc.get_power_status(node_id)
+    pwr = prov.get_power_status(node_id)
+    power = pwr.value if hasattr(pwr, "value") else str(pwr)
     reachability = "DOWN"
 
     if power == "ON":
@@ -42,7 +44,11 @@ def _probe_node(
     return node_id, power, reachability
 
 
-def status_command(settings: ClusterSettings, probe: bool = True) -> None:
+def status_command(
+    settings: ClusterSettings,
+    probe: bool = True,
+    provider: str | None = None,
+) -> None:
     nodes = get_all_nodes(settings)
     default_key = Path.home() / ".ssh" / "carla_scc_ed25519"
     key_path = default_key if default_key.exists() else None
@@ -54,11 +60,11 @@ def status_command(settings: ClusterSettings, probe: bool = True) -> None:
                 "[bold cyan]Probing live cluster hardware and network state...[/bold cyan]",
                 spinner="dots",
             ),
-            BMCController(settings) as bmc,
+            get_provider(settings, provider) as prov,
         ):
             for node in nodes:
                 nid, pwr, reach = _probe_node(
-                    bmc, settings, node.node_id, key_path
+                    prov, settings, node.node_id, key_path
                 )
                 live_data[nid] = (pwr, reach)
 
@@ -93,7 +99,7 @@ def status_command(settings: ClusterSettings, probe: bool = True) -> None:
     table.add_column("Node", justify="center", style="bold")
     table.add_column("Hostname", justify="center")
     table.add_column("OS IP", justify="center")
-    table.add_column("BMC IP", justify="center")
+    table.add_column("BMC/Target IP", justify="center")
     if probe:
         table.add_column("Power", justify="center")
         table.add_column("Reachability", justify="center")
@@ -191,9 +197,11 @@ def status_command(settings: ClusterSettings, probe: bool = True) -> None:
         console.print()
         console.print(lock_table)
 
+    active_provider = provider or settings.provider
     console.print(
         Panel(
             f"[bold]Cluster Configuration[/bold]\n"
+            f"• Active Provider: [cyan]{active_provider}[/cyan]\n"
             f"• Team ID: {settings.team_id}\n"
             f"• Gateway: {settings.gateway_ip}\n"
             f"• Bastion HTTP: {settings.bastion_http_ip}:{settings.bastion_http_port}\n"

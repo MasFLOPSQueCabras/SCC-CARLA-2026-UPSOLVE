@@ -210,18 +210,35 @@ def _run_bastion_ssh_action(
 def _dispatch_db_action(
     settings: ClusterSettings, action: str, args: dict[str, Any]
 ) -> Any:
-    """Dispatches database action to bastion Turso instance directly or over SSH."""
+    """Dispatches database action to bastion Turso instance directly, locally, or over SSH."""
     with _DB_THREAD_LOCK:
-        if is_running_on_bastion(settings.bastion_hostname):
-            db_path = os.path.expanduser(settings.bastion_state_db_path)
-            os.makedirs(os.path.dirname(db_path), exist_ok=True)
-            conn = turso.connect(db_path)
+        if (
+            is_running_on_bastion(settings.bastion_hostname)
+            or settings.provider == "libvirt"
+            or os.environ.get("SCC_LOCAL_DB") == "1"
+        ):
+            local_db_path = (
+                os.path.expanduser(settings.bastion_state_db_path)
+                if is_running_on_bastion(settings.bastion_hostname)
+                else os.path.expanduser("~/.config/scc_carla/local_state.db")
+            )
+            os.makedirs(os.path.dirname(local_db_path), exist_ok=True)
+            db_is_new = (
+                not os.path.exists(local_db_path)
+                or os.path.getsize(local_db_path) == 0
+            )
+            conn = turso.connect(local_db_path)
             try:
+                if db_is_new and action != "init_db":
+                    execute_action(
+                        conn, "init_db", {"team_id": settings.team_id}
+                    )
                 return execute_action(conn, action, args)
             finally:
                 conn.close()
 
         return _run_bastion_ssh_action(settings, action, args)
+
 
 
 def init_db(settings: ClusterSettings) -> None:

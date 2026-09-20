@@ -14,7 +14,6 @@ console = Console()
 def configure_command(
     settings: ClusterSettings,
     node: int | list[int] | None = None,
-    all_nodes: bool = False,
     playbook: str = "site.yaml",
     limit: str | None = None,
     check: bool = False,
@@ -39,9 +38,9 @@ def configure_command(
         return False
 
     targets: list[int] = []
-    if node is not None or all_nodes:
+    if node is not None:
         try:
-            targets = resolve_target_nodes(node, all_nodes)
+            targets = resolve_target_nodes(node)
         except ValueError as e:
             console.print(f"[bold red]{e}[/bold red]")
             if exit_on_error:
@@ -51,9 +50,7 @@ def configure_command(
     effective_limit = limit
     if targets:
         target_hosts = ",".join(settings.get_hostname(n) for n in targets)
-        effective_limit = (
-            f"{limit},{target_hosts}" if limit else target_hosts
-        )
+        effective_limit = f"{limit},{target_hosts}" if limit else target_hosts
 
     # If targeting a strict subset of cluster nodes and no explicit tag given,
     # default to node_independent play to avoid failing on cluster-wide coordination
@@ -92,5 +89,7 @@ def configure_command(
             sys.exit(res.returncode)
         return False
 
-    console.print("[green]✓[/green] [bold green]Ansible configuration complete.[/bold green]")
+    console.print(
+        "[green]✓[/green] [bold green]Ansible configuration complete.[/bold green]"
+    )
     return True

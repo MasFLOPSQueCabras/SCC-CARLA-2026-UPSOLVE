@@ -1,41 +1,32 @@
-def resolve_target_nodes(
-    node: int | list[int] | None, all_nodes: bool = False
-) -> list[int]:
-    """Resolves target node IDs using pattern matching and validation.
+def resolve_target_nodes(nodes: list[int] | int | None = None) -> list[int]:
+    """Resolves target node IDs using structural pattern matching and validation.
 
     Args:
-        node: A single node ID, a list of node IDs (e.g. from multiple -n flags), or None.
-        all_nodes: If True, targets all cluster nodes [1, 2, 3].
+        nodes: A single node ID, a list of node IDs, or None. If None or empty,
+               defaults to targeting all cluster nodes [1, 2, 3].
 
     Returns:
-        A sorted, deduplicated list of valid node IDs (e.g. [1, 2, 3] or [1, 2]) or [] if no target specified.
+        A sorted, deduplicated list of valid node IDs (e.g. [1, 2, 3] or [1, 2]).
 
     Raises:
         ValueError: If any node ID is outside the allowable range (1, 2, 3).
     """
-    if all_nodes:
-        return [1, 2, 3]
-
-    if node is None:
-        return []
-
-    if isinstance(node, int):
-        if node in (1, 2, 3):
-            return [node]
-        raise ValueError(f"Invalid node ID {node}. Must be 1, 2, or 3.")
-
-    if isinstance(node, list):
-        if not node:
-            return []
-        resolved: set[int] = set()
-        for n in node:
-            if isinstance(n, int) and n in (1, 2, 3):
-                resolved.add(n)
-            else:
-                raise ValueError(f"Invalid node ID {n}. Must be 1, 2, or 3.")
-        return sorted(resolved)
-
-    raise ValueError("Invalid node target specification.")
+    match nodes:
+        case None | []:
+            return [1, 2, 3]
+        case int(n) if n in (1, 2, 3):
+            return [n]
+        case list() as items if items:
+            resolved: set[int] = set()
+            for item in items:
+                match item:
+                    case int(n) if n in (1, 2, 3):
+                        resolved.add(n)
+                    case invalid:
+                        raise ValueError(f"Invalid node ID '{invalid}'. Must be 1, 2, or 3.")
+            return sorted(resolved)
+        case invalid:
+            raise ValueError(f"Invalid node specification: '{invalid}'. Must be 1, 2, or 3.")
 
 
 def parse_node_target(target: int | str | None) -> int:
