@@ -3,9 +3,16 @@ import subprocess
 from pathlib import Path
 
 from rich.console import Console
+from scc_provider_libvirt.overlay import create_cow_overlay
 
 from scc_carla.config import ClusterSettings
 from scc_carla.paths import get_image_cache_dir
+
+__all__ = [
+    "create_cow_overlay",
+    "ensure_cached_cloud_image",
+    "is_qcow2_image",
+]
 
 console = Console()
 
@@ -60,38 +67,6 @@ def ensure_cached_cloud_image(
         pass
 
     return cache_path
-
-
-def create_cow_overlay(
-    base_image: Path,
-    overlay_path: Path,
-    size: str = "25G",
-) -> Path:
-    """Creates a QEMU Copy-On-Write (qcow2) overlay pointing to an immutable base image."""
-    overlay_path.parent.mkdir(parents=True, exist_ok=True)
-    if overlay_path.exists():
-        overlay_path.unlink()
-
-    cmd = [
-        "qemu-img",
-        "create",
-        "-f",
-        "qcow2",
-        "-F",
-        "qcow2",
-        "-b",
-        str(base_image.resolve()),
-        str(overlay_path.resolve()),
-        size,
-    ]
-    subprocess.run(cmd, check=True, capture_output=True)
-
-    try:
-        overlay_path.chmod(0o666)
-    except OSError:
-        pass
-
-    return overlay_path
 
 
 def is_qcow2_image(path_or_url: str | Path) -> bool:

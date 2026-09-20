@@ -20,6 +20,7 @@ from scc_core.manifest import (
     VMSpec,
     load_manifest,
 )
+from scc_core.parallel import ParallelRunner, TaskResult
 from scc_core.providers import (
     NodeProvider,
     PowerState,
@@ -47,9 +48,11 @@ __all__ = [
     "NodeProvider",
     "NodeSpec",
     "OSSpec",
+    "ParallelRunner",
     "PowerState",
     "ProviderPaths",
     "ProviderType",
+    "TaskResult",
     "TemplateEngine",
     "VMSpec",
     "deep_merge",

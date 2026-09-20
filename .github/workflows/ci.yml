@@ -4,6 +4,8 @@ on:
   push:
     paths:
       - 'src/**'
+      - 'packages/**'
+      - 'configs/**'
       - 'templates/**'
       - 'ansible/**'
       - 'pyproject.toml'
@@ -12,6 +14,8 @@ on:
   pull_request:
     paths:
       - 'src/**'
+      - 'packages/**'
+      - 'configs/**'
       - 'templates/**'
       - 'ansible/**'
       - 'pyproject.toml'
@@ -43,10 +47,10 @@ jobs:
           enable-cache: true
 
       - name: Sync dependencies
-        run: uv sync --locked --all-groups
+        run: uv sync --locked --all-packages
 
       - name: Format check
-        run: uv run ruff format --check --output-format=github src
+        run: uv run ruff format --check --output-format=github .
 
   lint:
     name: Lint & Type Check
@@ -67,13 +71,53 @@ jobs:
 
       - name: Sync dependencies
         run: |
-          uv sync --locked --all-groups
+          uv sync --locked --all-packages
           uv pip install libvirt-python
 
       - name: Lint
-        run: uv run ruff check --output-format=github src
+        run: uv run ruff check --output-format=github .
 
       - name: Type check
-        run: uv run ty check --output-format=github src
+        run: uv run ty check --output-format=github
 
+  validate:
+    name: Validate Manifests & Ansible
+    runs-on: ubuntu-latest
 
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.1.0
+        with:
+          enable-cache: true
+
+      - name: Install system libvirt dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libvirt-dev pkg-config
+
+      - name: Sync dependencies
+        run: |
+          uv sync --locked --all-packages
+          uv pip install libvirt-python
+
+      - name: Validate pre-packaged cluster configs
+        run: |
+          uv run scc-carla cluster validate configs/clusters/vm-standard.yaml
+          uv run scc-carla cluster validate configs/clusters/vm-hw-optimized.yaml
+          uv run scc-carla cluster validate configs/clusters/helvetios-hpc.yaml
+
+      - name: Validate Ansible dynamic inventory
+        run: |
+          uv run ansible-inventory -i ansible/inventory/dynamic_inventory.py --list
+          SCC_CLUSTER_MANIFEST=configs/clusters/vm-standard.yaml uv run ansible-inventory -i ansible/inventory/dynamic_inventory.py --list
+          SCC_CLUSTER_MANIFEST=configs/clusters/vm-hw-optimized.yaml uv run ansible-inventory -i ansible/inventory/dynamic_inventory.py --list
+
+      - name: Validate Ansible playbooks syntax
+        run: |
+          ANSIBLE_CONFIG=ansible/ansible.cfg uv run ansible-playbook -i ansible/inventory/dynamic_inventory.py --syntax-check ansible/playbooks/site.yaml ansible/playbooks/verify_ib.yaml
+
+      - name: Verify cluster execution plan (Generic Libvirt)
+        run: |
+          uv run scc-carla plan --cluster configs/clusters/vm-standard.yaml

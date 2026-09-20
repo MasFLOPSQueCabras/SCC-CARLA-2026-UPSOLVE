@@ -166,3 +166,30 @@ class EphemeralRangeHTTPServer:
             check=False,
             capture_output=True,
         )
+
+    @classmethod
+    def sweep_remote(
+        cls,
+        bastion_ssh_host: str,
+        port: int,
+        template_engine: TemplateEngine,
+        remote_dir: Path | str | None = None,
+        force: bool = False,
+    ) -> bool:
+        """Kills any HTTP servers bound to port on the bastion and sweeps the staging directory."""
+        target_dir = str(remote_dir or (Path.home() / "scc_serve"))
+        stop_script = template_engine.render(
+            "scripts/bastion_http_stop.sh.j2",
+            {
+                "port": port,
+                "remove_dir": target_dir,
+            },
+        )
+        res = subprocess.run(
+            ["ssh", bastion_ssh_host, "bash -s"],
+            input=stop_script,
+            text=True,
+            check=False,
+            capture_output=True,
+        )
+        return res.returncode == 0

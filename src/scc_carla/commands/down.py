@@ -1,6 +1,5 @@
-from concurrent.futures import ThreadPoolExecutor, as_completed
-
 from rich.console import Console
+from scc_core.parallel import ParallelRunner
 
 from scc_carla.config import ClusterSettings
 from scc_carla.db import (
@@ -47,10 +46,12 @@ def down_command(
                         f"[bold green]{hostname} is offline and decommissioned.[/bold green]"
                     )
 
-                with ThreadPoolExecutor(max_workers=max(1, len(targets))) as executor:
-                    futures = [executor.submit(_decommission_node, n) for n in targets]
-                    for f in as_completed(futures):
-                        f.result()
+                runner = ParallelRunner[int, None](
+                    max_workers=max(1, len(targets)),
+                    timeout_sec=120.0,
+                    thread_name_prefix="scc-down",
+                )
+                runner.items(targets).task(_decommission_node).run()
 
             # Only sweep shared bastion HTTP resources if tearing down all nodes under provider with remote serve
             should_sweep = (

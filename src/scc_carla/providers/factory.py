@@ -10,12 +10,12 @@ def get_provider(
     selected = provider or settings.provider
 
     match selected:
-        case ProviderType.LIBVIRT | "libvirt":
+        case ProviderType.LIBVIRT | "libvirt" | "vm":
             from scc_carla.providers.libvirt import LibvirtProvider
 
             return LibvirtProvider(settings)
 
-        case ProviderType.BMC | "bmc":
+        case ProviderType.BMC | "bmc" | "helvetios":
             from scc_carla.providers.bmc import BMCProvider
 
             return BMCProvider(settings)

@@ -3,6 +3,7 @@ from pathlib import Path
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
+from scc_core.parallel import ParallelRunner
 
 from scc_carla.config import ClusterSettings
 from scc_carla.db import (
@@ -66,9 +67,23 @@ def status_command(
             ),
             get_provider(settings, provider) as prov,
         ):
-            for node in nodes:
-                nid, pwr, reach = _probe_node(prov, settings, node.node_id, key_path)
-                live_data[nid] = (pwr, reach)
+            runner = ParallelRunner[int, tuple[int, str, str]](
+                max_workers=len(nodes),
+                timeout_sec=10.0,
+                thread_name_prefix="scc-probe",
+            )
+            probe_results = (
+                runner.items([n.node_id for n in nodes])
+                .task(lambda nid: _probe_node(prov, settings, nid, key_path))
+                .run()
+            )
+
+            for nid, tr in probe_results.items():
+                if tr.success and tr.value:
+                    _, pwr, reach = tr.value
+                    live_data[nid] = (pwr, reach)
+                else:
+                    live_data[nid] = ("UNKNOWN", "DOWN")
 
             # Reconcile database state based on live findings
             for node in nodes:

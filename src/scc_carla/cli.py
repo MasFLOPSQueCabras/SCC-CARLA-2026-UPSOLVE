@@ -8,6 +8,7 @@ from scc_carla.commands.configure import configure_cli
 from scc_carla.commands.deploy import deploy_cli
 from scc_carla.commands.down import down_cli
 from scc_carla.commands.lock import lock_app
+from scc_carla.commands.plan import plan_cli
 from scc_carla.commands.power import power_app
 from scc_carla.commands.ssh import ssh_cli
 from scc_carla.commands.status import status_cli
@@ -32,6 +33,10 @@ app.command(
     "init",
     help="Initialize a cluster workspace with values.yaml and provider templates",
 )(cluster_init)
+app.command(
+    "plan",
+    help="Show cluster execution plan, resource drift, and operations diff",
+)(plan_cli)
 app.command("up", help="Provision cluster node OS and run configuration in parallel")(
     up_cli
 )

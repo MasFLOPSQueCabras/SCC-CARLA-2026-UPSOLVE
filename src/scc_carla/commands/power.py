@@ -3,6 +3,7 @@ from collections.abc import Callable
 
 from rich.console import Console
 from rich.table import Table
+from scc_core.parallel import ParallelRunner
 
 from scc_carla.config import ClusterSettings
 from scc_carla.db import LockError, NodeLifecycle, update_node_state
@@ -107,11 +108,11 @@ def _run_cluster_power_action(
             ),
             get_provider(settings, provider) as prov,
         ):
-            for n in targets:
+            if len(targets) == 1:
                 _execute_single_power_action(
                     prov=prov,
                     settings=settings,
-                    node=n,
+                    node=targets[0],
                     action_label=action_label,
                     action_fn=lambda nid: action_fn(prov, nid),
                     expected_state=expected_state,
@@ -120,6 +121,26 @@ def _run_cluster_power_action(
                     initial_delay_sec=initial_delay_sec,
                     new_lifecycle=new_lifecycle,
                 )
+            else:
+                runner = ParallelRunner[int, bool](
+                    max_workers=len(targets),
+                    timeout_sec=float(wait_timeout + 30) if wait else 60.0,
+                    thread_name_prefix="scc-power",
+                )
+                runner.items(targets).task(
+                    lambda n: _execute_single_power_action(
+                        prov=prov,
+                        settings=settings,
+                        node=n,
+                        action_label=action_label,
+                        action_fn=lambda nid: action_fn(prov, nid),
+                        expected_state=expected_state,
+                        wait=wait,
+                        wait_timeout=wait_timeout,
+                        initial_delay_sec=initial_delay_sec,
+                        new_lifecycle=new_lifecycle,
+                    )
+                ).run()
     except LockError as e:
         console.print(f"[bold red]Lock conflict: {e}[/bold red]")
         console.print(
