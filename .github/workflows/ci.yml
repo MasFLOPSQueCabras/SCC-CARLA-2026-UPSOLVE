@@ -60,11 +60,20 @@ jobs:
         with:
           enable-cache: true
 
+      - name: Install system libvirt dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libvirt-dev pkg-config
+
       - name: Sync dependencies
-        run: uv sync --locked --all-groups
+        run: |
+          uv sync --locked --all-groups
+          uv pip install libvirt-python
 
       - name: Lint
         run: uv run ruff check --output-format=github src
 
       - name: Type check
         run: uv run ty check --output-format=github src
+
+
