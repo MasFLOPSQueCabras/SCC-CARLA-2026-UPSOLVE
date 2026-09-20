@@ -54,6 +54,25 @@ uv run scc --help
 > [!TIP]
 > Both `uv run scc` and `uv run scc-carla` can be used interchangeably to invoke the CLI.
 
+> [!IMPORTANT]
+> **Looking for a 5-minute setup?** Check out the [Quickstart Guide](QUICKSTART.md) for copy-paste workflows, local VM sandboxing, and competition cluster bootstrapping.
+
+---
+
+## CLI Defaults & Target Resolution
+
+When commands are run without explicit parameters, `scc-carla` applies the following deterministic defaults:
+
+- **Cluster Manifest Resolution (`scc plan`, `scc cluster validate`)**: Searches in order:
+  1. `./values.yaml` in the current working directory.
+  2. `values.yaml` at the repository root.
+  3. `configs/clusters/vm-standard.yaml` (portable generic fallback).
+- **Target Nodes (`scc up`, `scc down`, `scc status`, `scc power`, `scc configure`, `scc bios`)**: Default to **all 3 nodes: `[1, 2, 3]`**. Target specific nodes using `-n <id>` (e.g. `-n 1` or `-n 1 -n 2`).
+- **SSH Target (`scc ssh`)**: Defaults to **Node 1** (`node1` at `10.2.72.1` / `192.168.122.101`). Use `scc ssh 2` or `scc ssh bastion`.
+- **Scaffolding (`scc init`)**: Defaults to `--provider vm` and `--profile standard`.
+- **BIOS Profile (`scc up`, `scc bios apply`)**: Defaults to `--bios-profile hpc` (Maximum Performance, NUMA on, Hyper-Threading off).
+- **Teardown Mode (`scc down`)**: Defaults to graceful shutdown (`--graceful`, 60s timeout) preserving disk images unless `--purge` is passed.
+
 ---
 
 ## Operational Guide
