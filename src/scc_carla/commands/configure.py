@@ -44,6 +44,24 @@ def configure_command(
             sys.exit(1)
         return False
 
+    # Auto-install required Ansible collections if missing
+    req_file = ansible_dir / "requirements.yml"
+    if req_file.exists():
+        subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "ansible.cli.galaxy",
+                "collection",
+                "install",
+                "-r",
+                str(req_file),
+            ],
+            check=False,
+            capture_output=True,
+            timeout=45,
+        )
+
     targets = resolve_target_nodes(node) if node is not None else [1, 2, 3]
 
     with get_provider(settings, provider) as prov:

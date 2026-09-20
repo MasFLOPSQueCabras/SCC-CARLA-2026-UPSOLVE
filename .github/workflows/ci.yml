@@ -108,6 +108,10 @@ jobs:
           uv run scc-carla cluster validate configs/clusters/vm-hw-optimized.yaml
           uv run scc-carla cluster validate configs/clusters/helvetios-hpc.yaml
 
+      - name: Install Ansible collections
+        run: |
+          uv run ansible-galaxy collection install -r ansible/requirements.yml
+
       - name: Validate Ansible dynamic inventory
         run: |
           uv run ansible-inventory -i ansible/inventory/dynamic_inventory.py --list
