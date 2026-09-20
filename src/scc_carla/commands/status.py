@@ -209,3 +209,51 @@ def status_command(
         )
     )
     console.print()
+
+
+from typing import Annotated
+
+import typer
+
+
+def status_cli(
+    probe: Annotated[
+        bool,
+        typer.Option(
+            "--probe/--no-probe",
+            help="Perform live hardware & network probing across cluster nodes",
+        ),
+    ] = True,
+    provider: Annotated[
+        str | None,
+        typer.Option(
+            "--provider",
+            "-P",
+            help="Node provider to inspect (libvirt, bmc, or chameleon)",
+        ),
+    ] = None,
+    cluster: Annotated[
+        Path | None,
+        typer.Option(
+            "--cluster",
+            "-c",
+            help="Path to cluster manifest or values.yaml override file",
+        ),
+    ] = None,
+) -> None:
+    """Inspect current cluster state, node lifecycles, and operational locks."""
+    from scc_core.manifest import load_manifest
+
+    from scc_carla.config import get_settings
+
+    settings = get_settings()
+
+    manifest_file = cluster or (
+        Path.cwd() / "values.yaml" if (Path.cwd() / "values.yaml").exists() else None
+    )
+    if manifest_file and manifest_file.exists():
+        manifest = load_manifest(manifest_file)
+        if provider is None:
+            provider = manifest.provider
+
+    status_command(settings, probe=probe, provider=provider)

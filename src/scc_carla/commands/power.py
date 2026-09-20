@@ -374,3 +374,273 @@ def power_metrics_command(
             console.print()
             console.print(table)
             console.print()
+
+
+from typing import Annotated
+
+import typer
+
+power_app = typer.Typer(
+    name="power",
+    help="Inspect and control cluster node power states",
+    no_args_is_help=True,
+)
+
+
+@power_app.command("on")
+def power_on(
+    node: Annotated[
+        list[int] | None,
+        typer.Option(
+            "--node",
+            "-n",
+            help="Node ID(s) to power on (1, 2, or 3). Defaults to all nodes [1, 2, 3].",
+        ),
+    ] = None,
+    wait: Annotated[
+        bool,
+        typer.Option(
+            "--wait",
+            "-w",
+            help="Wait until target node(s) reach confirmed ON power state",
+        ),
+    ] = False,
+    wait_timeout: Annotated[
+        int,
+        typer.Option(
+            "--wait-timeout",
+            help="Timeout in seconds when waiting for power state change",
+        ),
+    ] = 60,
+    force_lock: Annotated[
+        bool,
+        typer.Option(
+            "--force-lock",
+            "--force",
+            "-f",
+            help="Override and break conflicting operational locks",
+        ),
+    ] = False,
+    provider: Annotated[
+        str | None,
+        typer.Option(
+            "--provider",
+            "-P",
+            help="Node provider to use (libvirt, bmc, or chameleon)",
+        ),
+    ] = None,
+) -> None:
+    """Power on cluster node(s)."""
+    from scc_carla.config import get_settings
+
+    settings = get_settings()
+    power_on_command(
+        settings,
+        node=node,
+        wait=wait,
+        wait_timeout=wait_timeout,
+        force_lock=force_lock,
+        provider=provider,
+    )
+
+
+@power_app.command("off")
+def power_off(
+    node: Annotated[
+        list[int] | None,
+        typer.Option(
+            "--node",
+            "-n",
+            help="Node ID(s) to power off (1, 2, or 3). Defaults to all nodes [1, 2, 3].",
+        ),
+    ] = None,
+    force: Annotated[
+        bool,
+        typer.Option(
+            "--force",
+            "-f",
+            help="Force immediate hardware power off instead of graceful shutdown",
+        ),
+    ] = False,
+    wait: Annotated[
+        bool,
+        typer.Option(
+            "--wait",
+            "-w",
+            help="Wait until target node(s) reach confirmed OFF power state",
+        ),
+    ] = False,
+    wait_timeout: Annotated[
+        int,
+        typer.Option(
+            "--wait-timeout",
+            help="Timeout in seconds when waiting for power state change",
+        ),
+    ] = 60,
+    force_lock: Annotated[
+        bool,
+        typer.Option(
+            "--force-lock",
+            help="Override and break conflicting operational locks",
+        ),
+    ] = False,
+    provider: Annotated[
+        str | None,
+        typer.Option(
+            "--provider",
+            "-P",
+            help="Node provider to use (libvirt, bmc, or chameleon)",
+        ),
+    ] = None,
+) -> None:
+    """Power off cluster node(s) gracefully or forcefully."""
+    from scc_carla.config import get_settings
+
+    settings = get_settings()
+    power_off_command(
+        settings,
+        node=node,
+        graceful=not force,
+        wait=wait,
+        wait_timeout=wait_timeout,
+        force_lock=force_lock,
+        provider=provider,
+    )
+
+
+@power_app.command("restart")
+def power_restart(
+    node: Annotated[
+        list[int] | None,
+        typer.Option(
+            "--node",
+            "-n",
+            help="Node ID(s) to restart (1, 2, or 3). Defaults to all nodes [1, 2, 3].",
+        ),
+    ] = None,
+    force: Annotated[
+        bool,
+        typer.Option(
+            "--force",
+            "-f",
+            help="Force immediate hard reboot instead of graceful restart",
+        ),
+    ] = False,
+    wait: Annotated[
+        bool,
+        typer.Option(
+            "--wait",
+            "-w",
+            help="Wait until target node(s) complete reboot and reach confirmed ON power state",
+        ),
+    ] = False,
+    wait_timeout: Annotated[
+        int,
+        typer.Option(
+            "--wait-timeout",
+            help="Timeout in seconds when waiting for power state change",
+        ),
+    ] = 60,
+    force_lock: Annotated[
+        bool,
+        typer.Option(
+            "--force-lock",
+            help="Override and break conflicting operational locks",
+        ),
+    ] = False,
+    provider: Annotated[
+        str | None,
+        typer.Option(
+            "--provider",
+            "-P",
+            help="Node provider to use (libvirt, bmc, or chameleon)",
+        ),
+    ] = None,
+) -> None:
+    """Reboot / restart cluster node(s) gracefully or forcefully."""
+    from scc_carla.config import get_settings
+
+    settings = get_settings()
+    power_restart_command(
+        settings,
+        node=node,
+        graceful=not force,
+        wait=wait,
+        wait_timeout=wait_timeout,
+        force_lock=force_lock,
+        provider=provider,
+    )
+
+
+@power_app.command("status")
+def power_status(
+    node: Annotated[
+        list[int] | None,
+        typer.Option(
+            "--node",
+            "-n",
+            help="Node ID(s) to inspect (1, 2, or 3). Defaults to all nodes [1, 2, 3].",
+        ),
+    ] = None,
+    provider: Annotated[
+        str | None,
+        typer.Option(
+            "--provider",
+            "-P",
+            help="Node provider to use (libvirt, bmc, or chameleon)",
+        ),
+    ] = None,
+) -> None:
+    """Inspect current power state across cluster nodes."""
+    from scc_carla.config import get_settings
+
+    settings = get_settings()
+    power_status_command(settings, node=node, provider=provider)
+
+
+@power_app.command("metrics")
+def power_metrics(
+    node: Annotated[
+        list[int] | None,
+        typer.Option(
+            "--node",
+            "-n",
+            help="Node ID(s) to inspect (1, 2, or 3). Defaults to all nodes [1, 2, 3].",
+        ),
+    ] = None,
+    watch: Annotated[
+        bool,
+        typer.Option(
+            "--watch",
+            "-w",
+            help="Stream continuous live power telemetry updates until interrupted",
+        ),
+    ] = False,
+    interval: Annotated[
+        float,
+        typer.Option(
+            "--interval",
+            "-i",
+            help="Refresh interval in seconds when streaming with --watch",
+        ),
+    ] = 2.0,
+    provider: Annotated[
+        str | None,
+        typer.Option(
+            "--provider",
+            "-P",
+            help="Node provider to use (libvirt, bmc, or chameleon)",
+        ),
+    ] = None,
+) -> None:
+    """Inspect live power draw (Watts, average, peak) across cluster nodes."""
+    from scc_carla.config import get_settings
+
+    settings = get_settings()
+    power_metrics_command(
+        settings,
+        node=node,
+        watch=watch,
+        interval=interval,
+        provider=provider,
+    )

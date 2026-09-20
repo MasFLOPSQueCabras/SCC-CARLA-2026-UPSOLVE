@@ -1,7 +1,7 @@
 [project]
 name = "scc-carla"
 version = "0.1.0"
-description = "Add your description here"
+description = "SCC@CARLA Cluster Management CLI"
 readme = "README.md"
 authors = [
     { name = "Isaac David", email = "orpheezt@outlook.com" }
@@ -18,14 +18,28 @@ dependencies = [
     "rangehttpserver>=1.4.0",
     "rich>=15.0.0",
     "typer>=0.27.2",
+    "scc-core",
+    "scc-provider-libvirt",
+    "scc-provider-helvetios",
 ]
 
 [project.scripts]
+scc = "scc_carla:app"
 scc-carla = "scc_carla:app"
 
 [build-system]
 requires = ["uv_build>=0.12.17,<0.13.0"]
 build-backend = "uv_build"
+
+[tool.uv.workspace]
+members = [
+    "packages/*",
+]
+
+[tool.uv.sources]
+scc-core = { workspace = true }
+scc-provider-libvirt = { workspace = true }
+scc-provider-helvetios = { workspace = true }
 
 [dependency-groups]
 dev = [

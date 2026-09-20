@@ -1,0 +1,23 @@
+#cloud-config
+users:
+  - name: {{ node_username }}
+    gecos: SCC Node User
+    groups: [wheel]
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    shell: /bin/bash
+    lock_passwd: false
+    ssh_authorized_keys:
+      - {{ pubkey }}
+
+ssh_pwauth: false
+disable_root: true
+
+manage_etc_hosts: true
+
+growpart:
+  mode: auto
+  devices: ['/']
+  ignore_growroot_disabled: false
+
+runcmd:
+  - [ systemctl, enable, --now, sshd ]

@@ -1,0 +1,75 @@
+<domain type='kvm'>
+  <name>{{ domain_name }}</name>
+  <memory unit='MiB'>{{ memory_mb }}</memory>
+  <vcpu>{{ vcpus }}</vcpu>
+  {% if iothreads %}
+  <iothreads>{{ iothreads }}</iothreads>
+  {% endif %}
+  <cpu mode='{{ cpu_mode | default("host-model") }}'>
+    {% if topology %}
+    <topology sockets='{{ topology.sockets }}' cores='{{ topology.cores }}' threads='{{ topology.threads }}'/>
+    {% endif %}
+  </cpu>
+  <os {% if firmware == 'efi' %}firmware='efi'{% endif %}>
+    <type machine='{{ machine_type | default("q35") }}'>hvm</type>
+    {% if firmware == 'efi' %}
+    <firmware>
+      <feature enabled='no' name='enrolled-keys'/>
+      <feature enabled='no' name='secure-boot'/>
+    </firmware>
+    {% endif %}
+    {% if boot_dev %}
+    <boot dev='{{ boot_dev }}'/>
+    {% endif %}
+  </os>
+  <features>
+    <acpi/>
+    <apic/>
+    <pmu state='on'/>
+  </features>
+  <devices>
+    {% if disk_controller == 'virtio-scsi' %}
+    <controller type='scsi' index='0' model='virtio-scsi'>
+      <driver queues='{{ controller_queues | default(2) }}'{% if iothreads %} iothread='1'{% endif %}/>
+    </controller>
+    {% endif %}
+    <disk type='file' device='disk'>
+      <driver name='qemu' type='qcow2' cache='{{ disk_cache | default("writeback") }}' io='{{ disk_io | default("threads") }}' discard='{{ disk_discard | default("unmap") }}'/>
+      <source file='{{ disk_image }}'/>
+      <target dev='{{ disk_target | default("vda") }}' bus='{{ disk_bus | default("virtio") }}'/>
+    </disk>
+    {% if cidata_iso %}
+    <disk type='file' device='cdrom'>
+      <driver name='qemu' type='raw'/>
+      <source file='{{ cidata_iso }}'/>
+      <target dev='sdb' bus='sata'/>
+      <readonly/>
+    </disk>
+    {% endif %}
+    {% if network_bridge %}
+    <interface type='bridge'>
+      <source bridge='{{ network_bridge }}'/>
+      <mac address='{{ mac_address }}'/>
+      <model type='{{ nic_model | default("virtio") }}'/>
+      {% if vhost %}
+      <driver name='vhost' queues='{{ nic_queues | default(2) }}'/>
+      {% endif %}
+    </interface>
+    {% else %}
+    <interface type='network'>
+      <source network='{{ network_name | default("default") }}'/>
+      <mac address='{{ mac_address }}'/>
+      <model type='virtio'/>
+    </interface>
+    {% endif %}
+    <serial type='pty'>
+      <target port='0'/>
+    </serial>
+    <console type='pty'>
+      <target type='serial' port='0'/>
+    </console>
+    {% if graphics == 'spice' %}
+    <graphics type='spice' autoport='yes'/>
+    {% endif %}
+  </devices>
+</domain>

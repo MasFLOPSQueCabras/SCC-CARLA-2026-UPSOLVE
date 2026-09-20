@@ -169,9 +169,95 @@ def bios_apply_command(
         ):
             for n in target_nodes:
                 _stage_node_bios(bmc, settings, n, profile.value, attrs)
-    except LockError as e:
-        console.print(f"[bold red]Lock conflict: {e}[/bold red]")
+    except LockError:
         console.print(
             "[dim]Tip: Use --force-lock to override or 'scc-carla lock list' to view active locks.[/dim]"
         )
         return
+
+
+from typing import Annotated
+
+import typer
+
+bios_app = typer.Typer(
+    name="bios",
+    help="HPE iLO BIOS Configuration and Inspection",
+    no_args_is_help=True,
+)
+
+
+@bios_app.command("show")
+def bios_show(
+    node: Annotated[
+        list[int] | None,
+        typer.Option(
+            "--node",
+            "-n",
+            help="Node ID(s) to inspect (1, 2, or 3). Defaults to all nodes [1, 2, 3].",
+        ),
+    ] = None,
+) -> None:
+    """Inspect active and pending BIOS settings via BMC."""
+    from scc_carla.config import get_settings
+
+    settings = get_settings()
+    bios_show_command(settings, node=node)
+
+
+@bios_app.command("backup")
+def bios_backup(
+    node: Annotated[
+        int,
+        typer.Option("--node", "-n", help="Node ID to backup (1, 2, or 3)"),
+    ] = 1,
+    output: Annotated[
+        Path | None,
+        typer.Option("--output", "-o", help="Output JSON path for backup"),
+    ] = None,
+) -> None:
+    """Export complete BIOS attribute JSON dump for a node."""
+    from scc_carla.config import get_settings
+
+    settings = get_settings()
+    bios_backup_command(settings, node=node, output=output)
+
+
+@bios_app.command("apply")
+def bios_apply(
+    node: Annotated[
+        list[int] | None,
+        typer.Option(
+            "--node",
+            "-n",
+            help="Node ID(s) to configure (1, 2, or 3). Defaults to all nodes [1, 2, 3].",
+        ),
+    ] = None,
+    profile: Annotated[
+        BiosProfile,
+        typer.Option(
+            "--profile",
+            "-p",
+            help="BIOS profile to apply (hpc, baseline, low_latency)",
+        ),
+    ] = BiosProfile.HPC,
+    force_lock: Annotated[
+        bool,
+        typer.Option(
+            "--force-lock",
+            "--force",
+            "-f",
+            help="Override and break any conflicting operational locks",
+        ),
+    ] = False,
+) -> None:
+    """Stage a pre-tuned BIOS profile on target nodes."""
+    from scc_carla.config import get_settings
+
+    settings = get_settings()
+    bios_apply_command(
+        settings,
+        node=node,
+        profile=profile,
+        force_lock=force_lock,
+    )

@@ -1,0 +1,61 @@
+schema_version: 1
+name: helvetios-hpc
+provider: helvetios
+description: "Helvetios SCC@CARLA 3-node baremetal HPC cluster on HPE ProLiant DL385"
+
+network:
+  domain: scc.local
+  subnet: "10.2.72.0/24"
+  gateway: "10.2.72.254"
+  dns: "10.2.72.254"
+  infiniband_subnet: "10.148.0.0/16"
+
+bastion:
+  ssh_host: scc-bastion
+  ssh_user: scct-2672
+  remote_serve_dir: "~/scc_serve"
+  http_bind_ip: "10.7.12.101"
+  http_port: 8072
+  proxy_mode: socks5
+
+defaults:
+  os:
+    iso_name: "Rocky-10.2-x86_64-minimal.iso"
+    iso_source: "https://download.rockylinux.org/pub/rocky/10/isos/x86_64/Rocky-10.2-x86_64-minimal.iso"
+    username: "scct-2672"
+  hardware:
+    bios_profile: hpc
+    target_disk: "/dev/sda"
+    interface_name: eno1
+    infiniband_interface: ib0
+
+nodes:
+  - id: 1
+    hostname: node1
+    role: headnode
+    ip: "10.2.72.1"
+    mac: "b4:96:91:a1:00:01"
+    bmc:
+      ip: "10.1.72.1"
+      user: "${SCC_BMC_USER}"
+      password: "${SCC_BMC_PASSWORD}"
+
+  - id: 2
+    hostname: node2
+    role: computenode
+    ip: "10.2.72.2"
+    mac: "b4:96:91:a1:00:02"
+    bmc:
+      ip: "10.1.72.2"
+      user: "${SCC_BMC_USER}"
+      password: "${SCC_BMC_PASSWORD}"
+
+  - id: 3
+    hostname: node3
+    role: computenode
+    ip: "10.2.72.3"
+    mac: "b4:96:91:a1:00:03"
+    bmc:
+      ip: "10.1.72.3"
+      user: "${SCC_BMC_USER}"
+      password: "${SCC_BMC_PASSWORD}"

@@ -2,6 +2,14 @@ version = 1
 revision = 3
 requires-python = ">=3.14"
 
+[manifest]
+members = [
+    "scc-carla",
+    "scc-core",
+    "scc-provider-helvetios",
+    "scc-provider-libvirt",
+]
+
 [[package]]
 name = "annotated-doc"
 version = "0.0.5"
@@ -517,6 +525,9 @@ dependencies = [
     { name = "pyyaml" },
     { name = "rangehttpserver" },
     { name = "rich" },
+    { name = "scc-core" },
+    { name = "scc-provider-helvetios" },
+    { name = "scc-provider-libvirt" },
     { name = "typer" },
 ]
 
@@ -537,6 +548,9 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "rangehttpserver", specifier = ">=1.4.0" },
     { name = "rich", specifier = ">=15.0.0" },
+    { name = "scc-core", editable = "packages/scc-core" },
+    { name = "scc-provider-helvetios", editable = "packages/scc-provider-helvetios" },
+    { name = "scc-provider-libvirt", editable = "packages/scc-provider-libvirt" },
     { name = "typer", specifier = ">=0.27.2" },
 ]
 
@@ -544,6 +558,69 @@ requires-dist = [
 dev = [
     { name = "ruff", specifier = ">=0.16.8" },
     { name = "ty", specifier = ">=0.0.81" },
+]
+
+[[package]]
+name = "scc-core"
+version = "0.1.0"
+source = { editable = "packages/scc-core" }
+dependencies = [
+    { name = "jinja2" },
+    { name = "platformdirs" },
+    { name = "pydantic" },
+    { name = "pydantic-settings" },
+    { name = "pyturso" },
+    { name = "pyyaml" },
+    { name = "rich" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "jinja2", specifier = ">=3.1.6" },
+    { name = "platformdirs", specifier = ">=4.11.11" },
+    { name = "pydantic", specifier = ">=2.10.0" },
+    { name = "pydantic-settings", specifier = ">=2.15.0" },
+    { name = "pyturso", specifier = ">=0.7.2" },
+    { name = "pyyaml", specifier = ">=6.0.3" },
+    { name = "rich", specifier = ">=15.0.0" },
+]
+
+[[package]]
+name = "scc-provider-helvetios"
+version = "0.1.0"
+source = { editable = "packages/scc-provider-helvetios" }
+dependencies = [
+    { name = "httpx2", extra = ["socks"] },
+    { name = "jinja2" },
+    { name = "rangehttpserver" },
+    { name = "rich" },
+    { name = "scc-core" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "httpx2", extras = ["socks"], specifier = ">=2.13.0" },
+    { name = "jinja2", specifier = ">=3.1.6" },
+    { name = "rangehttpserver", specifier = ">=1.4.0" },
+    { name = "rich", specifier = ">=15.0.0" },
+    { name = "scc-core", editable = "packages/scc-core" },
+]
+
+[[package]]
+name = "scc-provider-libvirt"
+version = "0.1.0"
+source = { editable = "packages/scc-provider-libvirt" }
+dependencies = [
+    { name = "jinja2" },
+    { name = "rich" },
+    { name = "scc-core" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "jinja2", specifier = ">=3.1.6" },
+    { name = "rich", specifier = ">=15.0.0" },
+    { name = "scc-core", editable = "packages/scc-core" },
 ]
 
 [[package]]

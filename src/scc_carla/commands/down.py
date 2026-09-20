@@ -82,3 +82,72 @@ def down_command(
         return
 
     console.print("[bold green]Teardown complete. Zero lingering state.[/bold green]")
+
+
+from pathlib import Path
+from typing import Annotated
+
+import typer
+
+
+def down_cli(
+    node: Annotated[
+        list[int] | None,
+        typer.Option(
+            "--node",
+            "-n",
+            help="Node ID(s) to decommission (1, 2, or 3). Defaults to all nodes [1, 2, 3].",
+        ),
+    ] = None,
+    reset_db: Annotated[
+        bool,
+        typer.Option("--reset-db", "-r", help="Reset node states in database"),
+    ] = False,
+    force_lock: Annotated[
+        bool,
+        typer.Option(
+            "--force-lock",
+            "--force",
+            "-f",
+            help="Override and break any conflicting operational locks",
+        ),
+    ] = False,
+    provider: Annotated[
+        str | None,
+        typer.Option(
+            "--provider",
+            "-P",
+            help="Node provider to use (libvirt, bmc, or chameleon)",
+        ),
+    ] = None,
+    cluster: Annotated[
+        Path | None,
+        typer.Option(
+            "--cluster",
+            "-c",
+            help="Path to cluster manifest or values.yaml override file",
+        ),
+    ] = None,
+) -> None:
+    """Tear down and decommission cluster node(s)."""
+    from scc_core.manifest import load_manifest
+
+    from scc_carla.config import get_settings
+
+    settings = get_settings()
+
+    manifest_file = cluster or (
+        Path.cwd() / "values.yaml" if (Path.cwd() / "values.yaml").exists() else None
+    )
+    if manifest_file and manifest_file.exists():
+        manifest = load_manifest(manifest_file)
+        if provider is None:
+            provider = manifest.provider
+
+    down_command(
+        settings,
+        node=node,
+        reset_db=reset_db,
+        force_lock=force_lock,
+        provider=provider,
+    )

@@ -91,3 +91,64 @@ def ssh_command(
     except OSError as e:
         console.print(f"[bold red]Failed to execute ssh: {e}[/bold red]")
         sys.exit(1)
+
+
+from typing import Annotated
+
+import typer
+
+
+def ssh_cli(
+    node: Annotated[
+        str | None,
+        typer.Argument(
+            help="Target node to connect to: 1, 2, 3, or 'bastion' / 0. Defaults to node 1.",
+        ),
+    ] = "1",
+    command: Annotated[
+        list[str] | None,
+        typer.Argument(
+            help="Optional remote command and arguments to execute non-interactively on target",
+        ),
+    ] = None,
+    user: Annotated[
+        str | None,
+        typer.Option("--user", "-u", help="SSH username override"),
+    ] = None,
+    identity_file: Annotated[
+        Path | None,
+        typer.Option(
+            "--identity",
+            "-i",
+            help="Path to custom private SSH key file",
+        ),
+    ] = None,
+    force_tty: Annotated[
+        bool,
+        typer.Option(
+            "-t",
+            help="Force pseudo-terminal allocation (useful for interactive screen/tmux over SSH)",
+        ),
+    ] = False,
+    provider: Annotated[
+        str | None,
+        typer.Option(
+            "--provider",
+            "-P",
+            help="Node provider to use (libvirt, bmc, or chameleon)",
+        ),
+    ] = None,
+) -> None:
+    """Connect to a cluster node or the bastion via native SSH."""
+    from scc_carla.config import get_settings
+
+    settings = get_settings()
+    ssh_command(
+        settings,
+        target=node,
+        command=command,
+        user=user,
+        identity_file=identity_file,
+        force_tty=force_tty,
+        provider=provider,
+    )

@@ -554,3 +554,111 @@ def deploy_command(
             "[dim]Tip: Use --force-lock to override or 'scc-carla lock list' to view active locks.[/dim]"
         )
         return False
+
+
+from typing import Annotated
+
+import typer
+
+
+def deploy_cli(
+    node: Annotated[
+        list[int] | None,
+        typer.Option(
+            "--node",
+            "-n",
+            help="Node ID(s) to deploy (1, 2, or 3). Defaults to all nodes [1, 2, 3].",
+        ),
+    ] = None,
+    pubkey: Annotated[
+        Path | None, typer.Option("--pubkey", "-k", help="Path to SSH public key")
+    ] = None,
+    bios_profile: Annotated[
+        BiosProfile,
+        typer.Option(
+            "--bios-profile",
+            "-b",
+            help="BIOS profile to configure (hpc, baseline, low_latency)",
+        ),
+    ] = BiosProfile.HPC,
+    poll_timeout: Annotated[
+        int,
+        typer.Option(
+            "--poll-timeout",
+            "-t",
+            help="Polling timeout in seconds for installation completion",
+        ),
+    ] = 1800,
+    no_timeout: Annotated[
+        bool,
+        typer.Option(
+            "--no-timeout",
+            help="Disable polling timeout and wait indefinitely until installation completes",
+        ),
+    ] = False,
+    force_lock: Annotated[
+        bool,
+        typer.Option(
+            "--force-lock",
+            "--force",
+            "-f",
+            help="Override and break any conflicting operational locks",
+        ),
+    ] = False,
+    provider: Annotated[
+        str | None,
+        typer.Option(
+            "--provider",
+            "-P",
+            help="Node provider to use (libvirt, bmc, or chameleon)",
+        ),
+    ] = None,
+    image: Annotated[
+        str | None,
+        typer.Option(
+            "--image",
+            "--iso",
+            "-i",
+            help="Path or URL to OS image (.qcow2 cloud image or .iso installer)",
+        ),
+    ] = None,
+    cluster: Annotated[
+        Path | None,
+        typer.Option(
+            "--cluster",
+            "-c",
+            help="Path to cluster manifest or values.yaml override file",
+        ),
+    ] = None,
+) -> None:
+    """Deploy cluster node OS image and wait for SSH without running Ansible."""
+    from scc_core.manifest import load_manifest
+
+    from scc_carla.config import get_settings
+
+    settings = get_settings()
+
+    manifest_file = cluster or (
+        Path.cwd() / "values.yaml" if (Path.cwd() / "values.yaml").exists() else None
+    )
+    if manifest_file and manifest_file.exists():
+        manifest = load_manifest(manifest_file)
+        if provider is None:
+            provider = manifest.provider
+        if image is None and manifest.defaults.os.cloud_image:
+            image = (
+                manifest.defaults.os.cloud_image_source
+                or manifest.defaults.os.cloud_image
+            )
+
+    deploy_command(
+        settings,
+        node=node,
+        pubkey_path=pubkey,
+        poll_timeout=poll_timeout,
+        bios_profile=bios_profile,
+        no_timeout=no_timeout,
+        force_lock=force_lock,
+        provider=provider,
+        image=image,
+    )

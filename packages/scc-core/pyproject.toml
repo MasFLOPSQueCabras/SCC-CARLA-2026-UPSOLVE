@@ -1,0 +1,22 @@
+[project]
+name = "scc-core"
+version = "0.1.0"
+description = "Foundation package for SCC cluster manifests, lifecycle hooks, and provider interfaces"
+readme = "README.md"
+authors = [
+    { name = "Isaac David", email = "orpheezt@outlook.com" }
+]
+requires-python = ">=3.14"
+dependencies = [
+    "jinja2>=3.1.6",
+    "platformdirs>=4.11.11",
+    "pydantic-settings>=2.15.0",
+    "pydantic>=2.10.0",
+    "pyturso>=0.7.2",
+    "pyyaml>=6.0.3",
+    "rich>=15.0.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.12.17,<0.13.0"]
+build-backend = "uv_build"

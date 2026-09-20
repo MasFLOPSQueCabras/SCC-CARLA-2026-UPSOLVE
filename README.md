@@ -198,6 +198,18 @@ Configuration is loaded from environment variables (prefixed with `SCC_`) or `.e
 
 ---
 
+## Documentation
+
+Comprehensive architecture, hardware, and performance guides:
+
+- [Competence Replication Guide (Libvirt to Helvetios)](docs/COMPETENCE_REPLICATION.md) - Matrix of what can be replicated locally with 100% fidelity vs physical HPC.
+- [Cluster Hardware Specifications (SPECS)](docs/SPECS.md) - Deep dive into Helvetios dual-socket Xeon Gold 6140, AVX-512 frequencies, and $R_{\text{peak}}$.
+- [InfiniBand & MPI+UCX Guide](docs/NETWORKING.md) - 100 Gbps ConnectX-5 architecture, RDMA, IPoIB, and OpenMPI/UCX tuning.
+- [HPL Benchmark Guide](docs/HPL.md) & [HPL Tuning](docs/HPL_TUNING.md) - High Performance Linpack derivation ($N, NB, P \times Q$), grid search, and residual verification.
+- [MPI Programming & Execution](docs/MPI.md) - Multi-node execution patterns and process binding.
+
+---
+
 ## Team Members
 
 - Isaac David

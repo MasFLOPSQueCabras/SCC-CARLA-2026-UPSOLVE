@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Parameters
+OUTPUT_IMG="{{ output_img }}"
+KS_CFG="{{ ks_cfg_path }}"
+SIZE_MB="{{ size_mb | default(4) }}"
+
+# 1. Allocate blank zeroed image
+dd if=/dev/zero of="${OUTPUT_IMG}" bs=1M count="${SIZE_MB}" status=none
+
+# 2. Format with FAT filesystem labeled OEMDRV
+mkfs.vfat -n OEMDRV "${OUTPUT_IMG}" >/dev/null
+
+# 3. Copy kickstart file into the root of OEMDRV
+mcopy -i "${OUTPUT_IMG}" "${KS_CFG}" ::ks.cfg
