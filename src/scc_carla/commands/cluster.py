@@ -8,6 +8,8 @@ from rich.console import Console
 from rich.table import Table
 from scc_core.manifest import load_manifest
 
+from scc_carla.providers.factory import get_provider_templates_dir
+
 console = Console()
 
 cluster_app = typer.Typer(
@@ -18,17 +20,25 @@ cluster_app = typer.Typer(
 
 
 def _get_preset_config(provider: str, profile: str) -> Path:
-    repo_configs = Path(__file__).parents[3] / "configs" / "clusters"
     match (provider.lower(), profile.lower()):
         case ("vm" | "libvirt", "hw-optimized" | "cabrita"):
-            target = repo_configs / "vm-hw-optimized.yaml"
+            filename = "vm-hw-optimized.yaml"
         case ("vm" | "libvirt", _):
-            target = repo_configs / "vm-standard.yaml"
+            filename = "vm-standard.yaml"
         case ("helvetios" | "bmc", _):
-            target = repo_configs / "helvetios-hpc.yaml"
+            filename = "helvetios-hpc.yaml"
         case _:
-            target = repo_configs / "vm-standard.yaml"
-    return target
+            filename = "vm-standard.yaml"
+
+    candidates = [
+        Path(__file__).parents[3] / "configs" / "clusters" / filename,
+        Path.cwd() / "configs" / "clusters" / filename,
+    ]
+    for c in candidates:
+        if c.exists():
+            return c
+
+    return candidates[0]
 
 
 @cluster_app.command("init")
@@ -83,33 +93,19 @@ def init(
 
     # 2. Copy templates
     templates_dir.mkdir(parents=True, exist_ok=True)
-    if provider.lower() in ("vm", "libvirt"):
-        pkg_templates = (
-            Path(__file__).parents[3]
-            / "packages"
-            / "scc-provider-libvirt"
-            / "src"
-            / "scc_provider_libvirt"
-            / "templates"
-        )
-    else:
-        pkg_templates = (
-            Path(__file__).parents[3]
-            / "packages"
-            / "scc-provider-helvetios"
-            / "src"
-            / "scc_provider_helvetios"
-            / "templates"
-        )
-
-    if pkg_templates.exists():
-        for item in pkg_templates.rglob("*.j2"):
-            rel = item.relative_to(pkg_templates)
-            dest = templates_dir / rel
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            if not dest.exists():
-                shutil.copyfile(item, dest)
-                console.print(f"  [cyan]+[/cyan] Staged template: templates/{rel}")
+    with get_provider_templates_dir(provider) as pkg_templates:
+        if pkg_templates and pkg_templates.exists():
+            for item in pkg_templates.rglob("*.j2"):
+                rel = item.relative_to(pkg_templates)
+                dest = templates_dir / rel
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                if not dest.exists():
+                    shutil.copyfile(item, dest)
+                    console.print(f"  [cyan]+[/cyan] Staged template: templates/{rel}")
+        else:
+            console.print(
+                f"  [yellow]![/yellow] No bundled templates found for provider '{provider}'."
+            )
 
     console.print(
         f"\n[bold green]Cluster workspace initialized successfully in {target_dir}![/bold green]\n"
