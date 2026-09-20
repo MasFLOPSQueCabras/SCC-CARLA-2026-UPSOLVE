@@ -1,5 +1,6 @@
 import contextlib
 import shutil
+import subprocess
 from pathlib import Path
 from typing import Annotated
 
@@ -67,10 +68,34 @@ def init(
             help="Target directory to initialize cluster files in",
         ),
     ] = Path("."),
+    install_deps: Annotated[
+        bool,
+        typer.Option(
+            "--install-deps/--no-install-deps",
+            help="Install Python dependencies for the selected provider via uv sync",
+        ),
+    ] = True,
 ) -> None:
     """Initialize a cluster workspace with values.yaml and provider templates for customizing."""
     target_dir = target_dir.expanduser().resolve()
     target_dir.mkdir(parents=True, exist_ok=True)
+
+    canon_prov = "helvetios" if provider.lower() in ("helvetios", "bmc") else "libvirt"
+
+    # 1. Install provider dependencies if requested
+    if install_deps and shutil.which("uv"):
+        console.print(
+            f"[cyan]Installing Python dependencies for provider [bold]{canon_prov}[/bold] via uv sync...[/cyan]"
+        )
+        try:
+            subprocess.run(["uv", "sync", "--extra", canon_prov], check=True)
+            console.print(
+                f"[green]✓[/green] Dependencies for [bold]{canon_prov}[/bold] installed successfully."
+            )
+        except subprocess.CalledProcessError as e:
+            console.print(
+                f"[yellow]⚠ Failed to install dependencies via uv sync: {e}[/yellow]"
+            )
 
     values_path = target_dir / "values.yaml"
     templates_dir = target_dir / "templates"
@@ -80,7 +105,7 @@ def init(
         console.print(f"[bold red]Preset config not found: {source_config}[/bold red]")
         raise typer.Exit(code=1)
 
-    # 1. Copy values.yaml
+    # 2. Copy values.yaml
     if values_path.exists():
         console.print(
             f"[yellow]values.yaml already exists at {values_path}, keeping existing.[/yellow]"
@@ -91,7 +116,7 @@ def init(
             f"[green]✓[/green] Created [bold]{values_path}[/bold] (profile: {provider}/{profile})"
         )
 
-    # 2. Copy templates
+    # 3. Copy templates
     templates_dir.mkdir(parents=True, exist_ok=True)
     with get_provider_templates_dir(provider) as pkg_templates:
         if pkg_templates and pkg_templates.exists():
@@ -107,8 +132,22 @@ def init(
                 f"  [yellow]![/yellow] No bundled templates found for provider '{provider}'."
             )
 
+    # 4. Provider preflight checks
+    if canon_prov == "libvirt":
+        qemu_img = shutil.which("qemu-img")
+        virsh = shutil.which("virsh")
+        if not qemu_img:
+            console.print(
+                "  [yellow]⚠ 'qemu-img' not found on PATH. Install qemu-img or qemu-utils.[/yellow]"
+            )
+        if not virsh:
+            console.print(
+                "  [yellow]⚠ 'virsh' not found on PATH. Install libvirt-client.[/yellow]"
+            )
+
     console.print(
         f"\n[bold green]Cluster workspace initialized successfully in {target_dir}![/bold green]\n"
+        f"Provider: [bold]{canon_prov}[/bold] | Profile: [bold]{profile}[/bold]\n"
         f"Customize your parameters in [bold]values.yaml[/bold] and templates in [bold]templates/[/bold]."
     )
 

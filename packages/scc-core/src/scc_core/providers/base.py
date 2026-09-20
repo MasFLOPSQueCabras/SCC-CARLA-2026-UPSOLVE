@@ -1,4 +1,8 @@
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
+from collections.abc import Callable, Generator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -7,10 +11,22 @@ from typing import Any, Self
 
 
 class ProviderType(StrEnum):
-    LIBVIRT = "libvirt"
-    BMC = "bmc"
     HELVETIOS = "helvetios"
+    LIBVIRT = "libvirt"
     CHAMELEON = "chameleon"
+
+    @classmethod
+    def from_string(cls, val: str) -> ProviderType:
+        normalized = val.lower().strip()
+        if normalized in ("bmc", "helvetios"):
+            return cls.HELVETIOS
+        if normalized in ("vm", "libvirt"):
+            return cls.LIBVIRT
+        if normalized in ("chameleon", "chi"):
+            return cls.CHAMELEON
+        raise ValueError(
+            f"Unknown provider '{val}'. Valid options: 'helvetios', 'libvirt', 'chameleon'."
+        )
 
 
 class PowerState(StrEnum):
@@ -40,12 +56,21 @@ class NodeProvider(ABC):
     @property
     @abstractmethod
     def name(self) -> str:
-        """Identifier for provider (e.g. 'libvirt', 'bmc', 'helvetios')."""
+        """Identifier for provider (e.g. 'helvetios', 'libvirt', 'chameleon')."""
 
     @property
     @abstractmethod
     def paths(self) -> ProviderPaths:
         """Declared filesystem and storage paths for this provider."""
+
+    @contextmanager
+    def deployment_session(self) -> Generator[None]:
+        """Context manager managing provider-specific deployment infrastructure.
+
+        Default is a no-op context manager. Override to manage ephemeral media
+        servers, stage remote files, or prepare bridges.
+        """
+        yield
 
     @abstractmethod
     def get_node_ip(self, node_id: int) -> str:
@@ -75,12 +100,18 @@ class NodeProvider(ABC):
     def provision_node(
         self,
         node_id: int,
-        ks_cfg_path: Path,
         pubkey: str,
         bios_profile: str = "hpc",
+        image_source: str | None = None,
+        template_engine: Any | None = None,
+        staging_dir: Path | None = None,
+        progress_callback: Callable[[str], None] | None = None,
         **kwargs: Any,
     ) -> bool:
         """Bootstraps/provisions the target node."""
+
+    def post_provision(self, node_id: int) -> None:
+        """Lifecycle hook invoked after node completes SSH bootstrap."""
 
     @abstractmethod
     def teardown_node(self, node_id: int) -> bool:

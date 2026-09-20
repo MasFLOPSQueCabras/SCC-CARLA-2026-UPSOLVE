@@ -61,13 +61,20 @@ class ChameleonProvider(NodeProvider):
     def provision_node(
         self,
         node_id: int,
-        ks_cfg_path: Path,
         pubkey: str,
         bios_profile: str = "hpc",
+        image_source: str | None = None,
+        template_engine: Any | None = None,
+        staging_dir: Path | None = None,
+        progress_callback: Any | None = None,
         **kwargs: Any,
     ) -> bool:
-        # chameleon chi / openstack baremetal deploy
+        if progress_callback:
+            progress_callback("Deploying Chameleon bare-metal node via CHI...")
         return True
+
+    def post_provision(self, node_id: int) -> None:
+        pass
 
     def teardown_node(self, node_id: int) -> bool:
         # chameleon lease release or server delete

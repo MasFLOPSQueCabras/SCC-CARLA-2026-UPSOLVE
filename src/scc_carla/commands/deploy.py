@@ -1,4 +1,3 @@
-import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import nullcontext
@@ -13,7 +12,7 @@ from rich.progress import (
     TimeElapsedColumn,
 )
 
-from scc_carla.bios import BiosProfile, get_profile_attributes
+from scc_carla.bios import BiosProfile
 from scc_carla.commands.configure import configure_command
 from scc_carla.config import ClusterSettings
 from scc_carla.db import (
@@ -22,108 +21,14 @@ from scc_carla.db import (
     ensure_db,
     update_node_state,
 )
-from scc_carla.http_server import EphemeralRangeHTTPServer, is_running_on_bastion
-from scc_carla.image import ensure_cached_cloud_image, is_qcow2_image
-from scc_carla.iso import ensure_cached_iso
 from scc_carla.nodes import resolve_target_nodes
-from scc_carla.oemdrv import generate_oemdrv
 from scc_carla.ops import cluster_lock
-from scc_carla.paths import (
-    get_golden_image_dir,
-    get_image_cache_dir,
-    get_iso_cache_dir,
-)
 from scc_carla.providers.base import NodeProvider
-from scc_carla.providers.bmc import BMCProvider
-from scc_carla.providers.chameleon import ChameleonProvider
 from scc_carla.providers.factory import get_provider
-from scc_carla.providers.libvirt import LibvirtProvider
 from scc_carla.ssh import is_ssh_authenticated
 from scc_carla.templating import TemplateEngine
 
 console = Console()
-
-
-def _ensure_bastion_iso(
-    settings: ClusterSettings,
-    template_engine: TemplateEngine,
-    remote_serve_dir: Path | str | None = None,
-    iso_source: str | None = None,
-) -> None:
-    on_bastion = is_running_on_bastion(settings.bastion_hostname)
-    console.print(
-        "[cyan]Ensuring Rocky Linux minimal ISO is cached and direct-boot patched on bastion...[/cyan]"
-    )
-
-    serve_path = (
-        Path(remote_serve_dir)
-        if remote_serve_dir is not None
-        else (Path.home() / "scc_serve")
-    )
-
-    if on_bastion:
-        dest_iso_path = serve_path / settings.iso_name
-        cached_iso = ensure_cached_iso(settings, iso_source=iso_source)
-
-        if not dest_iso_path.exists():
-            dest_iso_path.parent.mkdir(parents=True, exist_ok=True)
-            console.print(
-                f"[cyan]Copying cached ISO to HTTP serving directory {dest_iso_path}...[/cyan]"
-            )
-            subprocess.run(["cp", str(cached_iso), str(dest_iso_path)], check=True)
-        console.print("[green]✓[/green] Bastion direct-boot ISO ready.")
-        return
-
-    # Off-bastion: check if ISO is already in bastion cache or serving directory
-    check_script = template_engine.render(
-        "scripts/bastion_check_iso.sh.j2",
-        {"serve_dir": str(serve_path), "iso_name": settings.iso_name},
-    )
-    res = subprocess.run(
-        ["ssh", settings.bastion_ssh_host, "bash -s"],
-        input=check_script,
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    status = res.stdout.strip()
-
-    if status == "MISSING":
-        source = iso_source or settings.iso_source
-        if source.startswith(("http://", "https://", "ftp://")):
-            console.print(
-                f"[cyan]Downloading {settings.iso_name} on bastion from {source}...[/cyan]"
-            )
-            download_script = template_engine.render(
-                "scripts/bastion_download_iso.sh.j2",
-                {
-                    "serve_dir": str(serve_path),
-                    "iso_name": settings.iso_name,
-                    "source_url": source,
-                },
-            )
-            subprocess.run(
-                ["ssh", settings.bastion_ssh_host, "bash -s"],
-                input=download_script,
-                text=True,
-                check=True,
-            )
-        else:
-            cached_iso = ensure_cached_iso(settings, iso_source=source)
-            console.print(
-                f"[cyan]Uploading local cached ISO ({cached_iso}) to bastion...[/cyan]"
-            )
-            subprocess.run(
-                [
-                    "scp",
-                    str(cached_iso),
-                    f"{settings.bastion_ssh_host}:{remote_serve_dir}/{settings.iso_name}",
-                ],
-                check=True,
-            )
-        console.print("[green]✓[/green] Bastion direct-boot ISO ready.")
-    else:
-        console.print("[green]✓[/green] Bastion direct-boot ISO ready.")
 
 
 def _provision_single_node(
@@ -138,7 +43,6 @@ def _provision_single_node(
     task_id: TaskID,
     bios_profile: BiosProfile = BiosProfile.HPC,
     privkey_path: Path | None = None,
-    remote_serve_dir: Path | str | None = None,
     no_timeout: bool = False,
     image_source: str | None = None,
     iso_source: str | None = None,
@@ -149,7 +53,7 @@ def _provision_single_node(
 
     progress.update(
         task_id,
-        description=f"[bold cyan]{hostname}[/bold cyan]: Staging kickstart & configuration...",
+        description=f"[bold cyan]{hostname}[/bold cyan]: Initializing provisioning via {prov.name}...",
     )
     update_node_state(
         settings,
@@ -159,142 +63,28 @@ def _provision_single_node(
         bios_profile=bios_profile.value,
     )
 
-    context = {
-        "node_ip": node_ip,
-        "gateway_ip": prov.paths.gateway_ip,
-        "dns_ip": prov.paths.dns_ip,
-        "hostname": hostname,
-        "node_username": settings.node_username,
-        "pubkey": pubkey,
-        "target_disk": "vda" if prov.name == "libvirt" else None,
-    }
+    chosen_img = image_source or iso_source
 
-    ks_cfg_path = local_staging_dir / f"ks_node{node}.cfg"
-    template_engine.render_to_file("kickstart/ks.cfg.j2", context, ks_cfg_path)
+    prov_ok = prov.provision_node(
+        node_id=node,
+        pubkey=pubkey,
+        bios_profile=bios_profile.value,
+        image_source=chosen_img,
+        template_engine=template_engine,
+        staging_dir=local_staging_dir,
+        progress_callback=lambda desc: progress.update(
+            task_id, description=f"[bold cyan]{hostname}[/bold cyan]: {desc}"
+        ),
+    )
 
-    match prov:
-        case BMCProvider() as bmc_prov:
-            oemdrv_name = f"oemdrv_node{node}.img"
-            oemdrv_path = local_staging_dir / oemdrv_name
-            generate_oemdrv(ks_cfg_path, oemdrv_path, template_engine=template_engine)
-
-            serve_path = (
-                Path(remote_serve_dir)
-                if remote_serve_dir is not None
-                else (Path.home() / "scc_serve")
-            )
-            on_bastion = is_running_on_bastion(settings.bastion_hostname)
-            if on_bastion:
-                dest_path = serve_path / oemdrv_name
-                dest_path.write_bytes(oemdrv_path.read_bytes())
-            else:
-                subprocess.run(
-                    [
-                        "scp",
-                        "-q",
-                        str(oemdrv_path),
-                        f"{settings.bastion_ssh_host}:{serve_path}/{oemdrv_name}",
-                    ],
-                    check=True,
-                )
-
-            progress.update(
-                task_id,
-                description=f"[bold cyan]{hostname}[/bold cyan]: Configuring BIOS '{bios_profile.value}' profile...",
-            )
-            bios_attrs = get_profile_attributes(bios_profile)
-            bmc_prov.set_bios_settings(node, bios_attrs)
-
-            iso_url = f"http://{settings.bastion_http_ip}:{settings.bastion_http_port}/{settings.iso_name}"
-            oemdrv_url = f"http://{settings.bastion_http_ip}:{settings.bastion_http_port}/{oemdrv_name}"
-
-            progress.update(
-                task_id,
-                description=f"[bold cyan]{hostname}[/bold cyan]: Mounting Virtual Media & triggering boot...",
-            )
-            if not bmc_prov.provision_node(
-                node,
-                ks_cfg_path=ks_cfg_path,
-                pubkey=pubkey,
-                bios_profile=bios_profile.value,
-                iso_url=iso_url,
-                oemdrv_url=oemdrv_url,
-            ):
-                progress.update(
-                    task_id,
-                    description=f"[bold red]✗ {hostname}[/bold red]: Failed to mount and boot.",
-                    completed=100,
-                )
-                update_node_state(settings, node, NodeLifecycle.OFFLINE)
-                return False
-
-        case LibvirtProvider() as libvirt_prov:
-            progress.update(
-                task_id,
-                description=f"[bold cyan]{hostname}[/bold cyan]: Bootstrapping local VM domain...",
-            )
-            chosen_img = image_source or iso_source
-            if chosen_img is None:
-                cached_golden = get_golden_image_dir() / "golden-rocky-base.qcow2"
-                cached_cloud = get_image_cache_dir() / settings.cloud_image_name
-                cached_iso = get_iso_cache_dir() / settings.iso_name
-                if cached_golden.exists():
-                    chosen_img = str(cached_golden)
-                elif cached_cloud.exists():
-                    chosen_img = str(cached_cloud)
-                elif cached_iso.exists():
-                    chosen_img = str(cached_iso)
-                else:
-                    chosen_img = settings.cloud_image_source
-
-            if is_qcow2_image(chosen_img):
-                cached_cloud_img = ensure_cached_cloud_image(
-                    settings, image_source=chosen_img
-                )
-                prov_ok = libvirt_prov.provision_node(
-                    node,
-                    ks_cfg_path=ks_cfg_path,
-                    pubkey=pubkey,
-                    bios_profile=bios_profile.value,
-                    image_path=cached_cloud_img,
-                )
-            else:
-                cached_iso = ensure_cached_iso(settings, iso_source=chosen_img)
-                prov_ok = libvirt_prov.provision_node(
-                    node,
-                    ks_cfg_path=ks_cfg_path,
-                    pubkey=pubkey,
-                    bios_profile=bios_profile.value,
-                    iso_path=cached_iso,
-                )
-
-            if not prov_ok:
-                progress.update(
-                    task_id,
-                    description=f"[bold red]✗ {hostname}[/bold red]: Failed to provision VM.",
-                    completed=100,
-                )
-                update_node_state(settings, node, NodeLifecycle.OFFLINE)
-                return False
-
-        case ChameleonProvider() as cham_prov:
-            progress.update(
-                task_id,
-                description=f"[bold cyan]{hostname}[/bold cyan]: Deploying Chameleon bare-metal node...",
-            )
-            if not cham_prov.provision_node(
-                node,
-                ks_cfg_path=ks_cfg_path,
-                pubkey=pubkey,
-                bios_profile=bios_profile.value,
-            ):
-                progress.update(
-                    task_id,
-                    description=f"[bold red]✗ {hostname}[/bold red]: Failed to deploy Chameleon node.",
-                    completed=100,
-                )
-                update_node_state(settings, node, NodeLifecycle.OFFLINE)
-                return False
+    if not prov_ok:
+        progress.update(
+            task_id,
+            description=f"[bold red]✗ {hostname}[/bold red]: Failed to provision via {prov.name}.",
+            completed=100,
+        )
+        update_node_state(settings, node, NodeLifecycle.OFFLINE)
+        return False
 
     start_time = time.time()
     ssh_ready = False
@@ -302,7 +92,7 @@ def _provision_single_node(
 
     progress.update(
         task_id,
-        description=f"[bold cyan]{hostname}[/bold cyan]: Installing OS & waiting for SSH{timeout_suffix}...",
+        description=f"[bold cyan]{hostname}[/bold cyan]: Booting OS & waiting for SSH{timeout_suffix}...",
     )
 
     while True:
@@ -333,11 +123,8 @@ def _provision_single_node(
 
     elapsed_install = int(time.time() - start_time)
 
-    match prov:
-        case BMCProvider() as bmc_prov:
-            bmc_prov.eject_virtual_media(node)
-        case _:
-            pass
+    # Post-provision hook
+    prov.post_provision(node)
 
     update_node_state(
         settings,
@@ -462,32 +249,11 @@ def deploy_command(
                 f"[cyan]Active Provider: [bold]{active_prov_name}[/bold][/cyan]"
             )
 
-            remote_serve = prov.paths.remote_serve_dir or str(Path.home() / "scc_serve")
             local_staging_dir = prov.paths.staging_dir
 
-            # BMC provider requires ephemeral HTTP server for virtual media
-            match prov:
-                case BMCProvider():
-                    http_ctx = EphemeralRangeHTTPServer(
-                        port=settings.bastion_http_port,
-                        bind_ip=settings.bastion_http_ip,
-                        bastion_ssh_host=settings.bastion_ssh_host,
-                        bastion_hostname=settings.bastion_hostname,
-                        template_engine=template_engine,
-                        remote_serve_dir=remote_serve,
-                    )
-                    _ensure_bastion_iso(
-                        settings,
-                        template_engine=template_engine,
-                        remote_serve_dir=remote_serve,
-                        iso_source=chosen_image,
-                    )
-                case _:
-                    http_ctx = nullcontext()
-
-            with http_ctx:
+            with prov.deployment_session():
                 console.print(
-                    f"[cyan]Initiating parallel baremetal deployment across {len(target_nodes)} node(s)...[/cyan]"
+                    f"[cyan]Initiating parallel deployment across {len(target_nodes)} node(s)...[/cyan]"
                 )
 
                 progress = Progress(
@@ -522,7 +288,6 @@ def deploy_command(
                                 task_id=node_tasks[n],
                                 bios_profile=bios_profile,
                                 privkey_path=privkey_file,
-                                remote_serve_dir=remote_serve,
                                 no_timeout=no_timeout,
                                 image_source=chosen_image,
                                 run_ansible=run_ansible,

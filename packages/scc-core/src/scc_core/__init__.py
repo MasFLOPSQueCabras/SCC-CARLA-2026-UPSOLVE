@@ -1,3 +1,9 @@
+from scc_core.di import (
+    Container,
+    ProviderNotInstalledError,
+    ProviderRegistry,
+    container,
+)
 from scc_core.lifecycle import (
     ClusterContext,
     HookCallback,
@@ -36,6 +42,7 @@ __all__ = [
     "ClusterContext",
     "ClusterDefaults",
     "ClusterManifest",
+    "Container",
     "DiskSpec",
     "HardwareSpec",
     "HookCallback",
@@ -50,11 +57,14 @@ __all__ = [
     "OSSpec",
     "ParallelRunner",
     "PowerState",
+    "ProviderNotInstalledError",
     "ProviderPaths",
+    "ProviderRegistry",
     "ProviderType",
     "TaskResult",
     "TemplateEngine",
     "VMSpec",
+    "container",
     "deep_merge",
     "load_manifest",
     "load_values",

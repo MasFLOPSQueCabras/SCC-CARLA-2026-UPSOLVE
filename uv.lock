@@ -517,18 +517,26 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "ansible-core" },
-    { name = "httpx2", extra = ["socks"] },
     { name = "jinja2" },
     { name = "platformdirs" },
     { name = "pydantic-settings" },
     { name = "pyturso" },
     { name = "pyyaml" },
-    { name = "rangehttpserver" },
     { name = "rich" },
     { name = "scc-core" },
+    { name = "typer" },
+]
+
+[package.optional-dependencies]
+all = [
     { name = "scc-provider-helvetios" },
     { name = "scc-provider-libvirt" },
-    { name = "typer" },
+]
+helvetios = [
+    { name = "scc-provider-helvetios" },
+]
+libvirt = [
+    { name = "scc-provider-libvirt" },
 ]
 
 [package.dev-dependencies]
@@ -540,19 +548,20 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "ansible-core", specifier = ">=2.21.4" },
-    { name = "httpx2", extras = ["socks"], specifier = ">=2.13.0" },
     { name = "jinja2", specifier = ">=3.1.6" },
     { name = "platformdirs", specifier = ">=4.11.11" },
     { name = "pydantic-settings", specifier = ">=2.15.0" },
     { name = "pyturso", specifier = ">=0.7.2" },
     { name = "pyyaml", specifier = ">=6.0.3" },
-    { name = "rangehttpserver", specifier = ">=1.4.0" },
     { name = "rich", specifier = ">=15.0.0" },
     { name = "scc-core", editable = "packages/scc-core" },
-    { name = "scc-provider-helvetios", editable = "packages/scc-provider-helvetios" },
-    { name = "scc-provider-libvirt", editable = "packages/scc-provider-libvirt" },
+    { name = "scc-provider-helvetios", marker = "extra == 'all'", editable = "packages/scc-provider-helvetios" },
+    { name = "scc-provider-helvetios", marker = "extra == 'helvetios'", editable = "packages/scc-provider-helvetios" },
+    { name = "scc-provider-libvirt", marker = "extra == 'all'", editable = "packages/scc-provider-libvirt" },
+    { name = "scc-provider-libvirt", marker = "extra == 'libvirt'", editable = "packages/scc-provider-libvirt" },
     { name = "typer", specifier = ">=0.27.2" },
 ]
+provides-extras = ["libvirt", "helvetios", "all"]
 
 [package.metadata.requires-dev]
 dev = [
