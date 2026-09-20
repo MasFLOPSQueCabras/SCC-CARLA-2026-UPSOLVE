@@ -115,8 +115,8 @@ class LibvirtProvider(NodeProvider):
         try:
             info = dom.info()
             # info: [state, maxMem, memory, nrVirtCpu, cpuTime]
-            cpu_time_ns = info[4]
-            memory_kib = info[2]
+            cpu_time_ns = float(info[4])
+            memory_kib = float(info[2])
             return {
                 "PresentPowerWatts": 45.0,  # Simulated baseline power for VM
                 "AveragePowerWatts": 42.0,
