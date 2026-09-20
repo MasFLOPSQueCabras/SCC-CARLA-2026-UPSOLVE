@@ -2,6 +2,9 @@
 
 Get your HPC cluster initialized, planned, provisioned, tuned, and configured in minutes.
 
+> [!TIP]
+> Operating on the physical competition cluster? See the dedicated **[Bare-Metal Helvetios Competition Runbook & Troubleshooting Manual](docs/QUICKSTART_SCC_CARLA2026.md)**.
+
 ---
 
 ## ⚡ CLI Defaults Reference
@@ -42,7 +45,7 @@ uv run scc --help
 
 ---
 
-## 💻 Workflow 1: Local Virtual Cluster (5 Minutes)
+## 💻 Local Virtual Cluster Quickstart (5 Minutes)
 
 Use this workflow to test and develop the full cluster stack on any Linux workstation or CI runner without physical hardware.
 
@@ -104,13 +107,13 @@ uv run scc down --purge --yes
 
 ## ⚡ Zero-Install Teardowns (Golden Image Pipeline)
 
-In the competition, reinstalling from the minimal bootable ISO via Anaconda takes **10–15 minutes per node**. To eliminate this bottleneck, `scc-carla` implements a **Golden Image & Streaming Pipeline**:
+In testing and competitions, reinstalling from the minimal bootable ISO via Anaconda takes **10–15 minutes per node**. To eliminate this bottleneck, `scc-carla` implements a **Golden Image & Streaming Pipeline**:
 
 ### 1. How It Works
 - **First Run**: Install the OS once from the minimal bootable ISO (or automated via Libvirt).
 - **Subsequent Teardowns**:
   - **Local Libvirt**: When you run `scc down --purge`, only the ephemeral child CoW overlay (`nodeX.qcow2`) is discarded. On `scc up`, a fresh CoW overlay is created on top of `golden-rocky-base.qcow2` in **< 2 seconds**. Zero package re-installations!
-  - **Bare-Metal Helvetios**: An optimized raw compressed block image (`golden-rocky-base.raw.zst`, ~1.1 GB) is streamed directly to NVMe (`curl | zstd -d | dd of=/dev/nvme0n1`) via Bastion HTTP in **30–45 seconds**, completely bypassing the 450+ sequential RPM installation phase.
+  - **Bare-Metal Streaming**: An optimized raw compressed block image (`golden-rocky-base.raw.zst`, ~1.1 GB) can be streamed directly to block devices (`curl | zstd -d | dd of=/dev/target`) via HTTP in **30–45 seconds**, completely bypassing sequential RPM package installation.
 
 ### 2. Image Management Commands
 ```bash
@@ -126,34 +129,16 @@ uv run scc image export --source ~/.cache/scc_carla/golden/golden-rocky-base.qco
 
 ---
 
-## 🏆 Workflow 2: Bare-Metal Helvetios (Competition Cluster)
-
-The physical competition cluster (dual Intel Xeon Gold 6140, HPE iLO Redfish, 100G InfiniBand) has a dedicated end-to-end guide complete with failure modes, error codes, and troubleshooting steps:
-
-👉 **[Read the Full Bare-Metal Competition Guide & Troubleshooting Manual](docs/QUICKSTART_SCC_CARLA2026.md)**
-
-### Fast Competition Checklist:
-1. **Credentials**: Setup `.env` (`SCC_BMC_USER`, `SCC_BMC_PASSWORD`, `SCC_TEAM_ID`) and configure SSH alias `scc-bastion`.
-2. **Workspace**: `uv run scc init --provider helvetios`
-3. **BIOS**: `uv run scc bios apply hpc`
-4. **Bootstrap**: `uv run scc up --cluster configs/clusters/helvetios-hpc.yaml`
-5. **Ansible**: `uv run scc configure`
-6. **Benchmark**: `uv run scc ssh 1` &rarr; `/shared/hpl/run_hpl.sh`
-
-For in-depth troubleshooting (iLO Virtual Media errors, port 8072 conflicts, disk device detection, OpenSM subnet manager, and lease lock deadlocks), see [docs/QUICKSTART_SCC_CARLA2026.md](docs/QUICKSTART_SCC_CARLA2026.md).
-
----
-
 ## 📋 CLI Daily Cheat Sheet
 
 | Command | Description | Example Invocation | Explicit Targeting |
 |---|---|---|---|
 | `scc status` | Inspect real-time cluster state & power | `uv run scc status` | `uv run scc status --no-probe` |
 | `scc up` | Plan & provision cluster nodes | `uv run scc up` *(interactive)* | `uv run scc up --yes -n 1 -n 2` |
-| `scc up --dry-run` | Preview execution plan diff only | `uv run scc up --dry-run` | `uv run scc up --dry-run -c configs/clusters/helvetios-hpc.yaml` |
+| `scc up --dry-run` | Preview execution plan diff only | `uv run scc up --dry-run` | `uv run scc up --dry-run -c configs/clusters/vm-hw-optimized.yaml` |
 | `scc down` | Plan & decommission cluster nodes | `uv run scc down` *(interactive)* | `uv run scc down --purge --yes -n 3` |
 | `scc down --dry-run`| Preview teardown plan diff only | `uv run scc down --dry-run` | `uv run scc down --dry-run --reset-db` |
-| `scc init` | Author new cluster workspace | `uv run scc init` | `uv run scc init -P helvetios -d ./my-cluster` |
+| `scc init` | Author new cluster workspace | `uv run scc init` | `uv run scc init -p hw-optimized -d ./my-cluster` |
 | `scc image` | Manage golden images & streaming | `uv run scc image list` | `uv run scc image export -s image.qcow2` |
 | `scc power` | Power control via BMC / Libvirt | `uv run scc power on` | `uv run scc power reboot -n 2` |
 | `scc bios` | Inspect or apply Redfish BIOS profile | `uv run scc bios status` | `uv run scc bios apply hpc -n 1` |
