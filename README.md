@@ -29,11 +29,32 @@ uv run scc-carla status
 uv run scc-carla status --no-probe
 ```
 
+### 2. Declarative Cluster Authoring (`init` & `cluster`)
+
+Author and scaffold cluster environments for local development (Libvirt/QEMU) or bare-metal HPC (Helvetios):
+
+```bash
+# Scaffold a local VM workspace with values.yaml and Jinja2 templates (standard profile)
+uv run scc-carla init --provider vm --profile standard
+
+# Scaffold a hardware-optimized VM workspace matching host CPU/virtio-scsi/io_uring
+uv run scc-carla init --provider vm --profile hw-optimized
+
+# Scaffold a Helvetios bare-metal HPC cluster workspace
+uv run scc-carla init --provider helvetios
+
+# List pre-packaged cluster profiles
+uv run scc-carla cluster list
+
+# Validate cluster schema and network allocations in values.yaml
+uv run scc-carla cluster validate values.yaml
+```
+
 ---
 
-### 2. Node Provisioning (`up`)
+### 3. Node Provisioning (`up`)
 
-Automates BIOS profile configuration, ephemeral HTTP serving, iLO virtual media boot, and unattended Rocky Linux 10.2 minimal installation:
+Automates BIOS profile configuration, ephemeral HTTP serving, iLO virtual media boot (or Libvirt VM creation), and unattended OS installation:
 
 ```bash
 # Provision a single node (default HPC BIOS profile)
@@ -41,6 +62,9 @@ uv run scc-carla up -n 1
 
 # Provision with no polling timeout (waits until install completes)
 uv run scc-carla up -n 1 --no-timeout
+
+# Provision using an explicit cluster configuration
+uv run scc-carla up -n 1 --cluster configs/clusters/vm-hw-optimized.yaml
 
 # Provision with a custom BIOS profile (hpc, baseline, low_latency)
 uv run scc-carla up -n 1 -b low_latency
@@ -54,7 +78,7 @@ uv run scc-carla up -n 1 --force
 
 ---
 
-### 3. Decommissioning & Teardown (`down`)
+### 4. Decommissioning & Teardown (`down`)
 
 Ejects virtual media, powers off nodes, sweeps ephemeral HTTP processes, and updates cluster state:
 
@@ -74,13 +98,19 @@ uv run scc-carla down -a --reset-db
 
 ---
 
-### 4. Cluster Configuration & Ansible (`configure`)
+### 5. Cluster Configuration & Ansible (`configure`)
 
-Declarative, idempotent post-provisioning cluster configuration and verification powered by Ansible:
+Declarative, idempotent post-provisioning cluster configuration and verification powered by Ansible.
+
+> [!NOTE]
+> The Ansible dynamic inventory (`ansible/inventory/dynamic_inventory.py`) takes from `values.yaml` (if present in the current working directory) or from `configs/clusters/<cluster>.yaml` (such as `configs/clusters/helvetios-hpc.yaml`, `configs/clusters/vm-hw-optimized.yaml`, or `configs/clusters/vm-standard.yaml`). You can also specify an explicit cluster manifest or override file using `--cluster <path>` or the `SCC_CLUSTER_MANIFEST` environment variable.
 
 ```bash
 # Configure all cluster nodes (hosts, base packages, InfiniBand, RDMA limits)
 uv run scc-carla configure
+
+# Configure using a specific cluster profile
+uv run scc-carla configure --cluster configs/clusters/vm-hw-optimized.yaml
 
 # Dry-run check mode (preview changes without applying)
 uv run scc-carla configure --check
@@ -94,7 +124,7 @@ uv run scc-carla configure -p verify_ib.yaml
 
 ---
 
-### 5. Power Management (`power`)
+### 6. Power Management (`power`)
 
 Direct bare-metal power operations via BMC Redfish without re-provisioning:
 
@@ -130,7 +160,7 @@ uv run scc-carla power metrics -w -i 1.0
 
 ---
 
-### 5. SSH Access (`ssh`)
+### 7. SSH Access (`ssh`)
 
 Direct transparent jump through the bastion host to cluster nodes:
 
@@ -150,7 +180,7 @@ uv run scc-carla ssh 1 "uname -a"
 
 ---
 
-### 6. BIOS Management (`bios`)
+### 8. BIOS Management (`bios`)
 
 Inspect, backup, and stage BIOS workload profiles via Redfish:
 
@@ -168,7 +198,7 @@ uv run scc-carla bios apply -a -p low_latency
 
 ---
 
-### 7. Operational Locks (`lock`)
+### 9. Operational Locks (`lock`)
 
 Distributed locking prevents teammates from running conflicting operations on shared hardware:
 

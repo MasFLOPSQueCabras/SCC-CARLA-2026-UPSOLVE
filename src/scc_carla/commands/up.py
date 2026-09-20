@@ -29,6 +29,7 @@ def up_command(
     provider: str | None = None,
     image: str | None = None,
     iso: str | None = None,
+    cluster: Path | str | None = None,
 ) -> None:
     """Performs whole lifecycle cluster startup: OS deployment, Ansible configuration, and cluster coordination."""
     ensure_db(settings)
@@ -80,6 +81,7 @@ def up_command(
                 node=target_nodes,
                 exit_on_error=False,
                 provider=provider,
+                cluster=cluster,
             )
             if not config_ok:
                 console.print(
@@ -102,6 +104,7 @@ def up_command(
                         tags="cluster_coordination",
                         exit_on_error=False,
                         provider=provider,
+                        cluster=cluster,
                     )
                     if coord_ok:
                         console.print(
@@ -238,4 +241,5 @@ def up_cli(
         force_lock=force_lock,
         provider=provider,
         image=image,
+        cluster=manifest_file,
     )

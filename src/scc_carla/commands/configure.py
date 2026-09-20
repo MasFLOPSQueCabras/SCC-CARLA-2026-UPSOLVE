@@ -23,6 +23,7 @@ def configure_command(
     tags: str | None = None,
     exit_on_error: bool = True,
     provider: str | None = None,
+    cluster: Path | str | None = None,
 ) -> bool:
     """Executes Ansible playbooks across targeted cluster nodes.
 
@@ -32,7 +33,9 @@ def configure_command(
     project_root = Path(__file__).resolve().parent.parent.parent.parent
     ansible_dir = project_root / "ansible"
     cfg_file = ansible_dir / "ansible.cfg"
-    inv_file = ansible_dir / "inventory" / "hosts.yaml"
+    inv_file = ansible_dir / "inventory" / "dynamic_inventory.py"
+    if not inv_file.exists():
+        inv_file = ansible_dir / "inventory" / "hosts.yaml"
     pb_file = ansible_dir / "playbooks" / playbook
 
     if not pb_file.exists():
@@ -111,6 +114,13 @@ def configure_command(
 
         # Setup SSH args for Ansible matching the active provider
         env = dict(os.environ)
+        if cluster:
+            c_path = Path(cluster)
+            if c_path.exists():
+                env["SCC_CLUSTER_MANIFEST"] = str(c_path.resolve())
+        elif (Path.cwd() / "values.yaml").exists():
+            env["SCC_CLUSTER_MANIFEST"] = str((Path.cwd() / "values.yaml").resolve())
+
         env["ANSIBLE_CONFIG"] = str(cfg_file)
         ssh_args = "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"
         if prov.paths.bastion_ssh_host:
@@ -221,4 +231,5 @@ def configure_cli(
         check=check,
         tags=tags,
         provider=provider,
+        cluster=manifest_file,
     )
