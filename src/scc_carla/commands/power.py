@@ -39,7 +39,9 @@ def power_on_command(
                 with console.status(f"[cyan]Powering on {hostname}...[/cyan]"):
                     success = prov.power_on(n)
                 if success:
-                    console.print(f"[green]✓[/green] Power on signal sent to {hostname}.")
+                    console.print(
+                        f"[green]✓[/green] Power on signal sent to {hostname}."
+                    )
                     if wait:
                         with console.status(
                             f"[cyan]Waiting for {hostname} power state -> ON...[/cyan]"
@@ -57,7 +59,9 @@ def power_on_command(
                                     f"[bold yellow]Timed out waiting for {hostname} to reach ON.[/bold yellow]"
                                 )
                 else:
-                    console.print(f"[bold red]Failed to power on {hostname}.[/bold red]")
+                    console.print(
+                        f"[bold red]Failed to power on {hostname}.[/bold red]"
+                    )
     except LockError as e:
         console.print(f"[bold red]Lock conflict: {e}[/bold red]")
         console.print(
@@ -290,9 +294,7 @@ def _render_metrics_table(
             else "[dim]-[/dim]"
         )
 
-        table.add_row(
-            str(n), hostname, pwr_style, curr_str, avg_str, min_str, max_str
-        )
+        table.add_row(str(n), hostname, pwr_style, curr_str, avg_str, min_str, max_str)
 
     if len(targets) > 1:
         total_curr_str = (

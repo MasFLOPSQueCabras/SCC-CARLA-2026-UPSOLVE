@@ -78,10 +78,10 @@ class EphemeralRangeHTTPServer:
                 "ssh",
                 self.bastion_ssh_host,
                 (
-                    f"python3 -c \""
+                    f'python3 -c "'
                     f"import socket; s = socket.socket(); s.settimeout(1.0); "
                     f"res = s.connect_ex(('{self.bind_ip}', {self.port})); s.close(); "
-                    f"exit(0 if res == 0 else 1)\""
+                    f'exit(0 if res == 0 else 1)"'
                 ),
             ],
             check=False,
@@ -97,9 +97,7 @@ class EphemeralRangeHTTPServer:
             return
 
         self._reused_existing = False
-        logger.info(
-            "Cleaning any stale HTTP servers on bastion port %s...", self.port
-        )
+        logger.info("Cleaning any stale HTTP servers on bastion port %s...", self.port)
         subprocess.run(
             [
                 "ssh",
@@ -128,7 +126,7 @@ class EphemeralRangeHTTPServer:
         ssh_cmd = [
             "ssh",
             self.bastion_ssh_host,
-            f"python3 -c \"{server_script}\"",
+            f'python3 -c "{server_script}"',
         ]
 
         logger.info(
@@ -159,9 +157,7 @@ class EphemeralRangeHTTPServer:
             if self._bastion_proc.stderr:
                 err = self._bastion_proc.stderr.read()
             self.stop()
-            raise RuntimeError(
-                f"Failed to start Range HTTP server on bastion: {err}"
-            )
+            raise RuntimeError(f"Failed to start Range HTTP server on bastion: {err}")
 
         logger.info(
             "Bastion Range HTTP server active and listening on %s:%s",
@@ -183,9 +179,7 @@ class EphemeralRangeHTTPServer:
                 self._bastion_proc.terminate()
                 self._bastion_proc.wait(timeout=3)
             except (OSError, subprocess.SubprocessError) as err:
-                logger.debug(
-                    "Error stopping bastion HTTP server process: %s", err
-                )
+                logger.debug("Error stopping bastion HTTP server process: %s", err)
             self._bastion_proc = None
 
         if not self.on_bastion:
@@ -219,15 +213,11 @@ class EphemeralRangeHTTPServer:
                 self._local_server.shutdown()
                 self._local_server.server_close()
             except OSError as err:
-                logger.debug(
-                    "Error shutting down local HTTP server: %s", err
-                )
+                logger.debug("Error shutting down local HTTP server: %s", err)
             self._local_server = None
             self._local_server_thread = None
 
-        logger.info(
-            "Bastion HTTP server and staging cleanly stopped and removed."
-        )
+        logger.info("Bastion HTTP server and staging cleanly stopped and removed.")
 
     @classmethod
     def sweep_remote(

@@ -58,4 +58,3 @@ def load_bios_file(file_path: Path) -> dict[str, Any]:
             return direct_attrs
         case _:
             raise ValueError(f"Invalid BIOS settings JSON file at {file_path}")
-

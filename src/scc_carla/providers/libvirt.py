@@ -7,6 +7,7 @@ import libvirt
 
 from scc_carla.config import ClusterSettings
 from scc_carla.providers.base import NodeProvider, PowerState
+from scc_carla.templating import TemplateEngine
 
 
 class LibvirtProvider(NodeProvider):
@@ -23,11 +24,14 @@ class LibvirtProvider(NodeProvider):
         libvirt.registerErrorHandler(lambda ctx, err: None, None)
         self.storage_dir = Path.home() / ".cache" / "scc_carla" / "libvirt"
         self.storage_dir.mkdir(parents=True, exist_ok=True)
+        self.template_engine = TemplateEngine()
 
     def _get_domain_name(self, node_id: int) -> str:
         return f"{self.settings.libvirt_domain_prefix}node{node_id}"
 
     def _get_domain(self, node_id: int) -> libvirt.virDomain | None:
+        if self.conn is None:
+            return None
         dom_name = self._get_domain_name(node_id)
         try:
             return self.conn.lookupByName(dom_name)
@@ -131,57 +135,19 @@ class LibvirtProvider(NodeProvider):
         memory_mib: int = 4096,
         vcpu: int = 2,
     ) -> str:
-        cdrom_xml = ""
-        if cdrom_path and cdrom_path.exists():
-            cdrom_xml = f"""
-    <disk type='file' device='cdrom'>
-      <driver name='qemu' type='raw'/>
-      <source file='{cdrom_path.resolve()}'/>
-      <target dev='sda' bus='sata'/>
-      <readonly/>
-    </disk>"""
-
-        return f"""<domain type='kvm'>
-  <name>{dom_name}</name>
-  <memory unit='MiB'>{memory_mib}</memory>
-  <currentMemory unit='MiB'>{memory_mib}</currentMemory>
-  <vcpu placement='static'>{vcpu}</vcpu>
-  <os>
-    <type arch='x86_64' machine='q35'>hvm</type>
-    <boot dev='hd'/>
-    <boot dev='cdrom'/>
-  </os>
-  <features>
-    <acpi/>
-    <apic/>
-  </features>
-  <cpu mode='host-passthrough' check='none'/>
-  <clock offset='utc'/>
-  <on_poweroff>destroy</on_poweroff>
-  <on_reboot>restart</on_reboot>
-  <on_crash>destroy</on_crash>
-  <devices>
-    <emulator>/usr/bin/qemu-system-x86_64</emulator>
-    <disk type='file' device='disk'>
-      <driver name='qemu' type='qcow2'/>
-      <source file='{disk_path.resolve()}'/>
-      <target dev='vda' bus='virtio'/>
-    </disk>{cdrom_xml}
-    <interface type='network'>
-      <source network='{self.settings.libvirt_network}'/>
-      <model type='virtio'/>
-    </interface>
-    <serial type='pty'>
-      <target type='isa-serial' port='0'>
-        <model name='isa-serial'/>
-      </target>
-    </serial>
-    <console type='pty'>
-      <target type='serial' port='0'/>
-    </console>
-    <graphics type='vnc' port='-1' autoport='yes' listen='127.0.0.1'/>
-  </devices>
-</domain>"""
+        context = {
+            "dom_name": dom_name,
+            "disk_path": str(disk_path.resolve()),
+            "cdrom_path": (
+                str(cdrom_path.resolve())
+                if cdrom_path and cdrom_path.exists()
+                else None
+            ),
+            "memory_mib": memory_mib,
+            "vcpu": vcpu,
+            "network": self.settings.libvirt_network,
+        }
+        return self.template_engine.render("libvirt/domain.xml.j2", context)
 
     def provision_node(
         self,
@@ -206,6 +172,8 @@ class LibvirtProvider(NodeProvider):
         # 2. Check if domain already defined
         dom = self._get_domain(node_id)
         if dom is None:
+            if self.conn is None:
+                raise RuntimeError("Libvirt connection is closed")
             xml_desc = self._generate_domain_xml(
                 dom_name=dom_name,
                 disk_path=disk_path,
@@ -248,4 +216,3 @@ class LibvirtProvider(NodeProvider):
             with contextlib.suppress(libvirt.libvirtError):
                 self.conn.close()
             self.conn = None
-

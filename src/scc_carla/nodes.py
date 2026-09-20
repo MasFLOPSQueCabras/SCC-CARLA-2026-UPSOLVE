@@ -23,10 +23,14 @@ def resolve_target_nodes(nodes: list[int] | int | None = None) -> list[int]:
                     case int(n) if n in (1, 2, 3):
                         resolved.add(n)
                     case invalid:
-                        raise ValueError(f"Invalid node ID '{invalid}'. Must be 1, 2, or 3.")
+                        raise ValueError(
+                            f"Invalid node ID '{invalid}'. Must be 1, 2, or 3."
+                        )
             return sorted(resolved)
         case invalid:
-            raise ValueError(f"Invalid node specification: '{invalid}'. Must be 1, 2, or 3.")
+            raise ValueError(
+                f"Invalid node specification: '{invalid}'. Must be 1, 2, or 3."
+            )
 
 
 def parse_node_target(target: int | str | None) -> int:

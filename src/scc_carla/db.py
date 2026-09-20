@@ -142,11 +142,13 @@ def _run_bastion_ssh_action(
     """Executes a database action on the bastion host via SSH using state_worker.py."""
     _ensure_worker_synced(settings)
 
-    payload = json.dumps({
-        "db_path": settings.bastion_state_db_path,
-        "action": action,
-        "args": args,
-    })
+    payload = json.dumps(
+        {
+            "db_path": settings.bastion_state_db_path,
+            "action": action,
+            "args": args,
+        }
+    )
     cmd = [
         "ssh",
         "-o",
@@ -202,9 +204,7 @@ def _run_bastion_ssh_action(
                 )
         time.sleep(0.3 * (attempt + 1))
 
-    raise RuntimeError(
-        f"Failed to execute Turso DB action on bastion: {last_err}"
-    )
+    raise RuntimeError(f"Failed to execute Turso DB action on bastion: {last_err}")
 
 
 def _dispatch_db_action(
@@ -224,21 +224,17 @@ def _dispatch_db_action(
             )
             os.makedirs(os.path.dirname(local_db_path), exist_ok=True)
             db_is_new = (
-                not os.path.exists(local_db_path)
-                or os.path.getsize(local_db_path) == 0
+                not os.path.exists(local_db_path) or os.path.getsize(local_db_path) == 0
             )
             conn = turso.connect(local_db_path)
             try:
                 if db_is_new and action != "init_db":
-                    execute_action(
-                        conn, "init_db", {"team_id": settings.team_id}
-                    )
+                    execute_action(conn, "init_db", {"team_id": settings.team_id})
                 return execute_action(conn, action, args)
             finally:
                 conn.close()
 
         return _run_bastion_ssh_action(settings, action, args)
-
 
 
 def init_db(settings: ClusterSettings) -> None:
@@ -378,9 +374,7 @@ def get_active_locks(settings: ClusterSettings) -> list[LockInfo]:
 
 
 def break_lock(settings: ClusterSettings, resource: str) -> bool:
-    return bool(
-        _dispatch_db_action(settings, "break_lock", {"resource": resource})
-    )
+    return bool(_dispatch_db_action(settings, "break_lock", {"resource": resource}))
 
 
 class ClusterLock:
@@ -426,9 +420,7 @@ class ClusterLock:
         self._acquired = list(self.resources)
         return self
 
-    def __exit__(
-        self, exc_type: object, exc_val: object, exc_tb: object
-    ) -> None:
+    def __exit__(self, exc_type: object, exc_val: object, exc_tb: object) -> None:
         if self._acquired:
             try:
                 release_locks(

@@ -32,9 +32,7 @@ def down_command(
 
     try:
         with (
-            cluster_lock(
-                settings, targets=targets, operation="down", force=force_lock
-            ),
+            cluster_lock(settings, targets=targets, operation="down", force=force_lock),
             get_provider(settings, provider) as prov,
         ):
             if targets:
@@ -48,12 +46,8 @@ def down_command(
                         f"[bold green]{hostname} is offline and decommissioned.[/bold green]"
                     )
 
-                with ThreadPoolExecutor(
-                    max_workers=max(1, len(targets))
-                ) as executor:
-                    futures = [
-                        executor.submit(_decommission_node, n) for n in targets
-                    ]
+                with ThreadPoolExecutor(max_workers=max(1, len(targets))) as executor:
+                    futures = [executor.submit(_decommission_node, n) for n in targets]
                     for f in as_completed(futures):
                         f.result()
 
@@ -61,9 +55,7 @@ def down_command(
             active_prov = provider or settings.provider
             should_sweep = (reset_db or len(targets) == 3) and active_prov == "bmc"
             if should_sweep:
-                console.print(
-                    "[cyan]Sweeping cluster background resources...[/cyan]"
-                )
+                console.print("[cyan]Sweeping cluster background resources...[/cyan]")
                 swept = EphemeralRangeHTTPServer.sweep_remote(
                     settings.bastion_ssh_host,
                     settings.bastion_http_port,
@@ -76,9 +68,7 @@ def down_command(
 
             if reset_db:
                 reset_cluster_state(settings)
-                console.print(
-                    "[green]✓[/green] Reset cluster node states in database"
-                )
+                console.print("[green]✓[/green] Reset cluster node states in database")
 
     except LockError as e:
         console.print(f"[bold red]Lock conflict: {e}[/bold red]")
@@ -87,6 +77,4 @@ def down_command(
         )
         return
 
-    console.print(
-        "[bold green]Teardown complete. Zero lingering state.[/bold green]"
-    )
+    console.print("[bold green]Teardown complete. Zero lingering state.[/bold green]")

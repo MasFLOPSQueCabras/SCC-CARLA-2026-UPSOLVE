@@ -6,9 +6,15 @@ from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 class TemplateEngine:
     def __init__(self, templates_dir: Path | None = None) -> None:
-        self.templates_dir = (
-            templates_dir if templates_dir is not None else (Path.cwd() / "templates")
-        )
+        if templates_dir is not None:
+            self.templates_dir = templates_dir
+        else:
+            repo_templates = Path(__file__).resolve().parent.parent.parent / "templates"
+            self.templates_dir = (
+                repo_templates
+                if repo_templates.exists()
+                else (Path.cwd() / "templates")
+            )
         self.env = Environment(
             loader=FileSystemLoader(str(self.templates_dir)),
             undefined=StrictUndefined,

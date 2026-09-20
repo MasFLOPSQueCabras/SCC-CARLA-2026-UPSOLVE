@@ -33,7 +33,9 @@ def normalize_resources(
                         normalized.append(f"node-{n}")
                     case str(s):
                         normalized.append(
-                            s if s.startswith("node-") or s == "cluster" else f"node-{s}"
+                            s
+                            if s.startswith("node-") or s == "cluster"
+                            else f"node-{s}"
                         )
                     case _:
                         raise ValueError(f"Invalid resource target item: {item}")

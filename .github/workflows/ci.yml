@@ -1,0 +1,70 @@
+name: ci
+
+on:
+  push:
+    paths:
+      - 'src/**'
+      - 'templates/**'
+      - 'ansible/**'
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - '.github/workflows/**'
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'templates/**'
+      - 'ansible/**'
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - '.github/workflows/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FORCE_COLOR: 1
+
+jobs:
+  format:
+    name: Format
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.1.0
+        with:
+          enable-cache: true
+
+      - name: Sync dependencies
+        run: uv sync --locked --all-groups
+
+      - name: Format check
+        run: uv run ruff format --check --output-format=github src
+
+  lint:
+    name: Lint & Type Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.1.0
+        with:
+          enable-cache: true
+
+      - name: Sync dependencies
+        run: uv sync --locked --all-groups
+
+      - name: Lint
+        run: uv run ruff check --output-format=github src
+
+      - name: Type check
+        run: uv run ty check --output-format=github src

@@ -20,7 +20,7 @@ class BMCProvider(NodeProvider):
         return self.bmc.power_off(node_id, graceful=graceful)
 
     def power_reset(self, node_id: int, graceful: bool = True) -> bool:
-        return self.bmc.power_reset(node_id, graceful=graceful)
+        return self.bmc.reset(node_id, graceful=graceful)
 
     def get_power_status(self, node_id: int) -> PowerState:
         status_str = self.bmc.get_power_status(node_id)
@@ -47,7 +47,7 @@ class BMCProvider(NodeProvider):
         oemdrv_url: str = "",
         **kwargs: Any,
     ) -> bool:
-        return self.bmc.mount_and_boot(node_id, iso_url=iso_url, oemdrv_url=oemdrv_url)
+        return self.bmc.mount_and_boot(node_id, iso_url=iso_url, floppy_url=oemdrv_url)
 
     def teardown_node(self, node_id: int) -> bool:
         self.bmc.eject_virtual_media(node_id)

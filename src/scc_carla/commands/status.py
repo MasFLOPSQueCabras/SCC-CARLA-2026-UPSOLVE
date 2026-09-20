@@ -63,9 +63,7 @@ def status_command(
             get_provider(settings, provider) as prov,
         ):
             for node in nodes:
-                nid, pwr, reach = _probe_node(
-                    prov, settings, node.node_id, key_path
-                )
+                nid, pwr, reach = _probe_node(prov, settings, node.node_id, key_path)
                 live_data[nid] = (pwr, reach)
 
             # Reconcile database state based on live findings
@@ -132,11 +130,7 @@ def status_command(
             pwr_style = (
                 "[bold green]ON[/bold green]"
                 if pwr == "ON"
-                else (
-                    "[dim]OFF[/dim]"
-                    if pwr == "OFF"
-                    else "[dim]UNKNOWN[/dim]"
-                )
+                else ("[dim]OFF[/dim]" if pwr == "OFF" else "[dim]UNKNOWN[/dim]")
             )
             reach_style = (
                 "[bold green]SSH READY[/bold green]"

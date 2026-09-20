@@ -6,7 +6,13 @@ from contextlib import nullcontext
 from pathlib import Path
 
 from rich.console import Console
-from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
+from rich.progress import (
+    Progress,
+    SpinnerColumn,
+    TaskID,
+    TextColumn,
+    TimeElapsedColumn,
+)
 
 from scc_carla.bios import BiosProfile, get_profile_attributes
 from scc_carla.commands.configure import configure_command
@@ -94,9 +100,7 @@ def _ensure_bastion_iso(
             console.print(
                 f"[cyan]Copying cached ISO to HTTP serving directory {dest_iso_path}...[/cyan]"
             )
-            subprocess.run(
-                ["cp", str(iso_cache_path), str(dest_iso_path)], check=True
-            )
+            subprocess.run(["cp", str(iso_cache_path), str(dest_iso_path)], check=True)
         console.print("[green]✓[/green] Bastion direct-boot ISO ready.")
         return
 
@@ -127,12 +131,12 @@ def _ensure_bastion_iso(
             f"curl -L -o ~/.cache/scc_carla/iso/{settings.iso_name} {settings.iso_url} && "
             f"python3 -c '"
             f"import mmap; "
-            f"f = open(\"{Path.home()}/.cache/scc_carla/iso/{settings.iso_name}\", \"r+b\"); "
+            f'f = open("{Path.home()}/.cache/scc_carla/iso/{settings.iso_name}", "r+b"); '
             f"mm = mmap.mmap(f.fileno(), 0); "
-            f"i = mm.find(b\"set default=\\\"1\\\"\"); "
-            f"mm[i:i+15] = b\"set default=\\\"0\\\"\"; "
-            f"i = mm.find(b\"set timeout=60\"); "
-            f"mm[i:i+14] = b\"set timeout=02\"; "
+            f'i = mm.find(b"set default=\\"1\\""); '
+            f'mm[i:i+15] = b"set default=\\"0\\""; '
+            f'i = mm.find(b"set timeout=60"); '
+            f'mm[i:i+14] = b"set timeout=02"; '
             f"mm.flush(); f.close()' && "
             f"cp ~/.cache/scc_carla/iso/{settings.iso_name} {remote_serve_dir}/{settings.iso_name}"
         )
@@ -140,9 +144,7 @@ def _ensure_bastion_iso(
             ["ssh", settings.bastion_ssh_host, download_cmd],
             check=True,
         )
-        console.print(
-            "[green]✓[/green] Bastion direct-boot ISO downloaded and ready."
-        )
+        console.print("[green]✓[/green] Bastion direct-boot ISO downloaded and ready.")
     else:
         console.print("[green]✓[/green] Bastion direct-boot ISO ready.")
 
@@ -156,7 +158,7 @@ def _provision_single_node(
     prov: NodeProvider,
     poll_timeout: int,
     progress: Progress,
-    task_id: int,
+    task_id: TaskID,
     bios_profile: BiosProfile = BiosProfile.HPC,
     privkey_path: Path | None = None,
     remote_serve_dir: str = "~/scc_serve",
@@ -283,9 +285,7 @@ def _provision_single_node(
 
     start_time = time.time()
     ssh_ready = False
-    timeout_suffix = (
-        " (no timeout)" if (no_timeout or poll_timeout <= 0) else ""
-    )
+    timeout_suffix = " (no timeout)" if (no_timeout or poll_timeout <= 0) else ""
 
     progress.update(
         task_id,
@@ -299,9 +299,7 @@ def _provision_single_node(
             and (time.time() - start_time >= poll_timeout)
         ):
             break
-        if is_ssh_authenticated(
-            node_ip, settings.node_username, key_path=privkey_path
-        ):
+        if is_ssh_authenticated(node_ip, settings.node_username, key_path=privkey_path):
             ssh_ready = True
             break
         time.sleep(5)
@@ -460,9 +458,7 @@ def up_command(
                         for n in target_nodes
                     }
 
-                    with ThreadPoolExecutor(
-                        max_workers=len(target_nodes)
-                    ) as executor:
+                    with ThreadPoolExecutor(max_workers=len(target_nodes)) as executor:
                         futures = {
                             executor.submit(
                                 _provision_single_node,
@@ -499,8 +495,7 @@ def up_command(
                 try:
                     all_cluster_nodes = get_all_nodes(settings)
                     all_3_online = len(all_cluster_nodes) == 3 and all(
-                        cn.state
-                        in (NodeLifecycle.READY, NodeLifecycle.BOOTSTRAPPED)
+                        cn.state in (NodeLifecycle.READY, NodeLifecycle.BOOTSTRAPPED)
                         for cn in all_cluster_nodes
                     )
                     if all_3_online:

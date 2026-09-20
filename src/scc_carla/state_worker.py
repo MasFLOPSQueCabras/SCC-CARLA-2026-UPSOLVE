@@ -14,9 +14,7 @@ def get_file_hash(path: Path | str | None = None) -> str:
     return hashlib.sha256(target_path.read_bytes()).hexdigest()
 
 
-def execute_action(
-    conn: turso.Connection, action: str, args: dict[str, Any]
-) -> Any:
+def execute_action(conn: turso.Connection, action: str, args: dict[str, Any]) -> Any:
     """Executes a cluster database action against a Turso connection."""
     cur = conn.cursor()
 
@@ -223,7 +221,11 @@ def main() -> None:
     try:
         raw_input = sys.stdin.read()
         if not raw_input:
-            print(json.dumps({"status": "error", "error": "No JSON payload provided on stdin"}))
+            print(
+                json.dumps(
+                    {"status": "error", "error": "No JSON payload provided on stdin"}
+                )
+            )
             sys.exit(1)
 
         req = json.loads(raw_input)

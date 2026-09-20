@@ -30,9 +30,7 @@ class ClusterSettings(BaseSettings):
     libvirt_domain_prefix: str = "scc-"
 
     iso_name: str = "Rocky-10.2-x86_64-minimal.iso"
-    iso_url: str = (
-        "https://download.rockylinux.org/pub/rocky/10/isos/x86_64/Rocky-10.2-x86_64-minimal.iso"
-    )
+    iso_url: str = "https://download.rockylinux.org/pub/rocky/10/isos/x86_64/Rocky-10.2-x86_64-minimal.iso"
 
     bastion_state_db_path: str = "~/.config/scc_carla/scc_state.db"
     node_username: str = "scct-2672"

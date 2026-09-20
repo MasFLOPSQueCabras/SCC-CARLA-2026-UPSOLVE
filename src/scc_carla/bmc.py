@@ -314,26 +314,16 @@ class BMCController:
                     pwr_controls = data.get("PowerControl", [])
                     if pwr_controls:
                         pwr_ctrl = pwr_controls[0]
-                        metrics["current_watts"] = pwr_ctrl.get(
-                            "PowerConsumedWatts"
-                        )
+                        metrics["current_watts"] = pwr_ctrl.get("PowerConsumedWatts")
                         pwr_metrics = pwr_ctrl.get("PowerMetrics", {})
                         metrics["average_watts"] = pwr_metrics.get(
                             "AverageConsumedWatts"
                         )
-                        metrics["max_watts"] = pwr_metrics.get(
-                            "MaxConsumedWatts"
-                        )
-                        metrics["min_watts"] = pwr_metrics.get(
-                            "MinConsumedWatts"
-                        )
-                        metrics["interval_min"] = pwr_metrics.get(
-                            "IntervalInMin"
-                        )
+                        metrics["max_watts"] = pwr_metrics.get("MaxConsumedWatts")
+                        metrics["min_watts"] = pwr_metrics.get("MinConsumedWatts")
+                        metrics["interval_min"] = pwr_metrics.get("IntervalInMin")
         except (httpx2.HTTPError, OSError) as err:
-            logger.debug(
-                "Failed to get power metrics for Node %s: %s", node_id, err
-            )
+            logger.debug("Failed to get power metrics for Node %s: %s", node_id, err)
         return metrics
 
     def eject_virtual_media(self, node_id: int) -> bool:
