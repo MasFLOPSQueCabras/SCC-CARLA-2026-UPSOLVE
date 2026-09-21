@@ -126,6 +126,31 @@ class ProviderRegistry:
                 break
         return factory(**accepted)
 
+    def get_provider_class(self, name: str) -> type[NodeProvider]:
+        """Resolves the NodeProvider class without instantiating it."""
+        self._discover_entry_points()
+        canon = self.canonical_name(name)
+
+        if canon in self._factories:
+            factory = self._factories[canon]
+            if isinstance(factory, type) and issubclass(factory, NodeProvider):
+                return factory
+
+        if canon in self._lazy_loaders:
+            mod_path, cls_name = self._lazy_loaders[canon]
+            try:
+                mod = importlib.import_module(mod_path)
+                cls = getattr(mod, cls_name)
+                if isinstance(cls, type) and issubclass(cls, NodeProvider):
+                    return cls
+            except (ImportError, ModuleNotFoundError) as e:
+                raise ProviderNotInstalledError(canon, str(e)) from e
+
+        valid = sorted({*self._factories.keys(), *self._lazy_loaders.keys()})
+        raise ValueError(
+            f"Unknown provider '{name}'. Registered providers: {', '.join(valid)}."
+        )
+
     def list_providers(self) -> list[str]:
         self._discover_entry_points()
         return sorted({*self._factories.keys(), *self._lazy_loaders.keys()})

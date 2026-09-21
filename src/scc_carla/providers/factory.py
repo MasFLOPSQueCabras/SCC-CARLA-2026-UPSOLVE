@@ -33,20 +33,7 @@ def get_provider_templates_dir(provider: str) -> Generator[Path | None]:
     except ModuleNotFoundError, TypeError, FileNotFoundError:
         pass
 
-    # 2. Development source tree fallback
-    repo_root = Path(__file__).parents[3]
-    dev_path = (
-        repo_root
-        / "packages"
-        / pkg_name.replace("_", "-")
-        / "src"
-        / pkg_name
-        / "templates"
-    )
-    if dev_path.is_dir():
-        yield dev_path
-    else:
-        yield None
+    yield None
 
 
 def get_provider(

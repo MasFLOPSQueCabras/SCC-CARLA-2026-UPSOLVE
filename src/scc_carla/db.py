@@ -79,6 +79,14 @@ def _ensure_worker_synced(settings: ClusterSettings) -> None:
         check_cmd = [
             "ssh",
             "-o",
+            "ConnectTimeout=2",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "StrictHostKeyChecking=no",
+            "-o",
+            "UserKnownHostsFile=/dev/null",
+            "-o",
             "ControlMaster=auto",
             "-o",
             "ControlPath=/tmp/scc-carla-ssh-%r@%h:%p",
@@ -88,6 +96,10 @@ def _ensure_worker_synced(settings: ClusterSettings) -> None:
             f"cat {remote_hash_file} 2>/dev/null || true",
         ]
         res = subprocess.run(check_cmd, capture_output=True, text=True, check=False)
+        if res.returncode != 0:
+            raise ConnectionError(
+                f"Cannot connect to bastion host {settings.bastion_ssh_host} (exit code {res.returncode})"
+            )
         remote_hash = res.stdout.strip()
 
         if remote_hash == local_hash:
@@ -97,6 +109,14 @@ def _ensure_worker_synced(settings: ClusterSettings) -> None:
         logger.info("Syncing state_worker.py to bastion (hash: %s)...", local_hash[:8])
         mkdir_cmd = [
             "ssh",
+            "-o",
+            "ConnectTimeout=2",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "StrictHostKeyChecking=no",
+            "-o",
+            "UserKnownHostsFile=/dev/null",
             "-o",
             "ControlMaster=auto",
             "-o",
@@ -111,6 +131,14 @@ def _ensure_worker_synced(settings: ClusterSettings) -> None:
         scp_cmd = [
             "scp",
             "-o",
+            "ConnectTimeout=2",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "StrictHostKeyChecking=no",
+            "-o",
+            "UserKnownHostsFile=/dev/null",
+            "-o",
             "ControlMaster=auto",
             "-o",
             "ControlPath=/tmp/scc-carla-ssh-%r@%h:%p",
@@ -124,6 +152,14 @@ def _ensure_worker_synced(settings: ClusterSettings) -> None:
 
         write_hash_cmd = [
             "ssh",
+            "-o",
+            "ConnectTimeout=2",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "StrictHostKeyChecking=no",
+            "-o",
+            "UserKnownHostsFile=/dev/null",
             "-o",
             "ControlMaster=auto",
             "-o",
@@ -152,6 +188,14 @@ def _run_bastion_ssh_action(
     )
     cmd = [
         "ssh",
+        "-o",
+        "ConnectTimeout=2",
+        "-o",
+        "BatchMode=yes",
+        "-o",
+        "StrictHostKeyChecking=no",
+        "-o",
+        "UserKnownHostsFile=/dev/null",
         "-o",
         "ControlMaster=auto",
         "-o",
@@ -235,7 +279,22 @@ def _dispatch_db_action(
             finally:
                 conn.close()
 
-        return _run_bastion_ssh_action(settings, action, args)
+        try:
+            return _run_bastion_ssh_action(settings, action, args)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Bastion DB unreachable (%s), falling back to local DB", exc)
+            local_db_path = str(get_local_db_path().resolve())
+            os.makedirs(os.path.dirname(local_db_path), exist_ok=True)
+            db_is_new = (
+                not os.path.exists(local_db_path) or os.path.getsize(local_db_path) == 0
+            )
+            conn = turso.connect(local_db_path)
+            try:
+                if db_is_new and action != "init_db":
+                    execute_action(conn, "init_db", {"team_id": settings.team_id})
+                return execute_action(conn, action, args)
+            finally:
+                conn.close()
 
 
 def init_db(settings: ClusterSettings) -> None:

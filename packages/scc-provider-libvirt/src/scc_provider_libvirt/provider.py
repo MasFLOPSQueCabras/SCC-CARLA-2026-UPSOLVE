@@ -1,4 +1,5 @@
 import contextlib
+import importlib.resources as ir
 import subprocess
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
@@ -33,13 +34,7 @@ class LibvirtProvider(NodeProvider):
             self.uri = getattr(settings, "libvirt_uri", uri)
         else:
             self.uri = uri
-
-        self.conn = libvirt.open(self.uri)
-        if not self.conn:
-            raise RuntimeError(f"Failed to connect to libvirt URI: {self.uri}")
-
-        libvirt.registerErrorHandler(lambda ctx, err: None, None)
-
+        self._conn: libvirt.virConnect | None = None
         self._paths = paths or ProviderPaths(
             staging_dir=Path.home() / ".cache" / "scc_carla" / "staging",
             iso_cache_dir=Path.home() / ".cache" / "scc_carla" / "iso",
@@ -63,12 +58,47 @@ class LibvirtProvider(NodeProvider):
         self.template_engine = template_engine or TemplateEngine()
 
     @property
+    def conn(self) -> libvirt.virConnect:
+        if self._conn is None:
+            c = libvirt.open(self.uri)
+            if not c:
+                raise RuntimeError(f"Failed to connect to libvirt URI: {self.uri}")
+            libvirt.registerErrorHandler(lambda ctx, err: None, None)
+            self._conn = c
+        return self._conn
+
+    @property
     def name(self) -> str:
         return "libvirt"
 
     @property
     def paths(self) -> ProviderPaths:
         return self._paths
+
+    @classmethod
+    def list_presets(cls) -> list[str]:
+        return ["standard", "hw-optimized"]
+
+    @classmethod
+    def get_preset_config(cls, profile: str = "standard") -> str:
+        filename = (
+            "vm-hw-optimized.yaml"
+            if profile.lower() in ("hw-optimized", "cabrita")
+            else "vm-standard.yaml"
+        )
+        ref = ir.files("scc_provider_libvirt").joinpath("configs", filename)
+        return ref.read_text(encoding="utf-8")
+
+    @classmethod
+    def get_templates_dir(cls) -> Path | None:
+        try:
+            ref = ir.files("scc_provider_libvirt").joinpath("templates")
+            with ir.as_file(ref) as p:
+                if p.is_dir():
+                    return Path(p)
+        except ModuleNotFoundError, TypeError, FileNotFoundError:
+            pass
+        return None
 
     @contextmanager
     def deployment_session(self) -> Generator[None]:
@@ -448,7 +478,7 @@ class LibvirtProvider(NodeProvider):
         return True
 
     def close(self) -> None:
-        if self.conn is not None:
+        if self._conn is not None:
             with contextlib.suppress(libvirt.libvirtError):
-                self.conn.close()
-            self.conn = None
+                self._conn.close()
+            self._conn = None

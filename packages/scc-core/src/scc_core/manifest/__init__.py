@@ -1,4 +1,4 @@
-from scc_core.manifest.loader import interpolate_env_vars, load_manifest
+from scc_core.manifest.loader import interpolate_env_vars, load_manifest, parse_manifest
 from scc_core.manifest.models import (
     BastionSpec,
     BMCSpec,
@@ -25,4 +25,5 @@ __all__ = [
     "VMSpec",
     "interpolate_env_vars",
     "load_manifest",
+    "parse_manifest",
 ]

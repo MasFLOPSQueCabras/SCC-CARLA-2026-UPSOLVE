@@ -1,3 +1,4 @@
+import importlib.resources as ir
 import logging
 import subprocess
 from collections.abc import Callable, Generator
@@ -104,6 +105,28 @@ class HelvetiosProvider(NodeProvider):
     @property
     def paths(self) -> ProviderPaths:
         return self._paths
+
+    @classmethod
+    def list_presets(cls) -> list[str]:
+        return ["hpc"]
+
+    @classmethod
+    def get_preset_config(cls, profile: str = "hpc") -> str:
+        ref = ir.files("scc_provider_helvetios").joinpath(
+            "configs", "helvetios-hpc.yaml"
+        )
+        return ref.read_text(encoding="utf-8")
+
+    @classmethod
+    def get_templates_dir(cls) -> Path | None:
+        try:
+            ref = ir.files("scc_provider_helvetios").joinpath("templates")
+            with ir.as_file(ref) as p:
+                if p.is_dir():
+                    return Path(p)
+        except ModuleNotFoundError, TypeError, FileNotFoundError:
+            pass
+        return None
 
     def _get_node_spec(self, node_id: int) -> NodeSpec | None:
         if self.manifest:

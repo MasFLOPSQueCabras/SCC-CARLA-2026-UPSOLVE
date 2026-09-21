@@ -61,6 +61,23 @@ class NodeProvider(ABC):
     def paths(self) -> ProviderPaths:
         """Declared filesystem and storage paths for this provider."""
 
+    @classmethod
+    def list_presets(cls) -> list[str]:
+        """Lists available preset profile names for this provider."""
+        return ["standard"]
+
+    @classmethod
+    def get_preset_config(cls, profile: str = "standard") -> str:
+        """Returns the YAML string content of the provider's packaged preset."""
+        raise NotImplementedError(
+            f"Provider '{cls.__name__}' does not implement get_preset_config."
+        )
+
+    @classmethod
+    def get_templates_dir(cls) -> Path | None:
+        """Returns the filesystem Path to the provider's packaged templates."""
+        return None
+
     @contextmanager
     def deployment_session(self) -> Generator[None]:
         """Context manager managing provider-specific deployment infrastructure.

@@ -522,6 +522,8 @@ dependencies = [
     { name = "pyturso" },
     { name = "rich" },
     { name = "scc-core" },
+    { name = "scc-provider-helvetios" },
+    { name = "scc-provider-libvirt" },
     { name = "typer" },
 ]
 
@@ -551,8 +553,10 @@ requires-dist = [
     { name = "pyturso", specifier = ">=0.7.2" },
     { name = "rich", specifier = ">=15.0.0" },
     { name = "scc-core", editable = "packages/scc-core" },
+    { name = "scc-provider-helvetios", editable = "packages/scc-provider-helvetios" },
     { name = "scc-provider-helvetios", marker = "extra == 'all'", editable = "packages/scc-provider-helvetios" },
     { name = "scc-provider-helvetios", marker = "extra == 'helvetios'", editable = "packages/scc-provider-helvetios" },
+    { name = "scc-provider-libvirt", editable = "packages/scc-provider-libvirt" },
     { name = "scc-provider-libvirt", marker = "extra == 'all'", editable = "packages/scc-provider-libvirt" },
     { name = "scc-provider-libvirt", marker = "extra == 'libvirt'", editable = "packages/scc-provider-libvirt" },
     { name = "typer", specifier = ">=0.27.2" },

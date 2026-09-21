@@ -19,12 +19,8 @@ def interpolate_env_vars(text: str) -> str:
     return _ENV_PATTERN.sub(_replace, text)
 
 
-def load_manifest(manifest_path: Path | str) -> ClusterManifest:
-    path = Path(manifest_path).expanduser().resolve()
-    if not path.exists():
-        raise FileNotFoundError(f"Cluster manifest not found: {path}")
-
-    raw_text = path.read_text(encoding="utf-8")
+def parse_manifest(raw_text: str) -> ClusterManifest:
+    """Parses and resolves a ClusterManifest from a YAML string."""
     interpolated_text = interpolate_env_vars(raw_text)
     data: dict[str, Any] = yaml.safe_load(interpolated_text) or {}
 
@@ -52,3 +48,13 @@ def load_manifest(manifest_path: Path | str) -> ClusterManifest:
     manifest_dict = manifest.model_dump()
     manifest_dict["nodes"] = [n.model_dump() for n in resolved_nodes]
     return ClusterManifest.model_validate(manifest_dict)
+
+
+def load_manifest(manifest_path: Path | str) -> ClusterManifest:
+    """Loads and validates a cluster manifest from a file path."""
+    path = Path(manifest_path).expanduser().resolve()
+    if not path.exists():
+        raise FileNotFoundError(f"Cluster manifest not found: {path}")
+
+    raw_text = path.read_text(encoding="utf-8")
+    return parse_manifest(raw_text)

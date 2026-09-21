@@ -1,15 +1,18 @@
 import contextlib
+import importlib.resources as ir
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 from typing import Annotated
 
 import typer
 from rich.console import Console
 from rich.table import Table
-from scc_core.manifest import load_manifest
+from scc_core.di import container
+from scc_core.manifest import load_manifest, parse_manifest
 
-from scc_carla.providers.factory import get_provider_templates_dir
+from scc_carla.commands.provider import scaffold_provider
 
 console = Console()
 
@@ -20,70 +23,139 @@ cluster_app = typer.Typer(
 )
 
 
-def _get_preset_config(provider: str, profile: str) -> Path:
-    match (provider.lower(), profile.lower()):
-        case ("vm" | "libvirt", "hw-optimized" | "cabrita"):
-            filename = "vm-hw-optimized.yaml"
-        case ("vm" | "libvirt", _):
-            filename = "vm-standard.yaml"
-        case ("helvetios" | "bmc", _):
-            filename = "helvetios-hpc.yaml"
-        case _:
-            filename = "vm-standard.yaml"
-
-    candidates = [
-        Path(__file__).parents[3] / "configs" / "clusters" / filename,
-        Path.cwd() / "configs" / "clusters" / filename,
-    ]
-    for c in candidates:
-        if c.exists():
-            return c
-
-    return candidates[0]
-
-
 @cluster_app.command("init")
 def init(
     provider: Annotated[
-        str,
+        str | None,
         typer.Option(
             "--provider",
             "-P",
-            help="Target provider: 'vm' (libvirt) or 'helvetios' (baremetal HPC)",
+            help="Target provider: 'libvirt' (vm) or 'helvetios' (baremetal HPC)",
         ),
-    ] = "vm",
+    ] = None,
+    no_provider: Annotated[
+        bool,
+        typer.Option(
+            "--no-provider",
+            help="Initialize base workspace (Ansible recipes) only, without adding a provider",
+        ),
+    ] = False,
     profile: Annotated[
-        str,
+        str | None,
         typer.Option(
             "--profile",
             "-p",
-            help="Config profile: 'standard' or 'hw-optimized' (for host hardware / cabrita)",
+            help="Config profile: e.g. 'standard' or 'hw-optimized' (libvirt), 'hpc' (helvetios)",
         ),
-    ] = "standard",
+    ] = None,
+    team_id: Annotated[
+        int | None,
+        typer.Option(
+            "--team-id",
+            help="Team ID for IP/subnet/port configuration (Helvetios HPC)",
+        ),
+    ] = None,
+    username: Annotated[
+        str | None,
+        typer.Option(
+            "--username",
+            "-u",
+            help="Cluster node / bastion SSH username",
+        ),
+    ] = None,
+    bastion: Annotated[
+        str | None,
+        typer.Option(
+            "--bastion",
+            "-b",
+            help="Bastion SSH host (Helvetios HPC)",
+        ),
+    ] = None,
     target_dir: Annotated[
         Path,
-        typer.Option(
-            "--dir",
-            "-d",
-            help="Target directory to initialize cluster files in",
+        typer.Argument(
+            help="Target directory to initialize cluster files in (defaults to current directory)",
         ),
     ] = Path("."),
     install_deps: Annotated[
         bool,
         typer.Option(
             "--install-deps/--no-install-deps",
-            help="Install Python dependencies for the selected provider via uv sync",
+            help="Install Python dependencies for the selected provider via uv sync (if pyproject.toml is present)",
         ),
     ] = True,
 ) -> None:
-    """Initialize a cluster workspace with values.yaml and provider templates for customizing."""
+    """Initialize a cluster workspace with Ansible recipes and modular provider assets."""
     target_dir = target_dir.expanduser().resolve()
     target_dir.mkdir(parents=True, exist_ok=True)
 
-    canon_prov = "helvetios" if provider.lower() in ("helvetios", "bmc") else "libvirt"
+    # 1. Base workspace scaffolding: copy global Ansible recipes
+    ansible_dest = target_dir / "ansible"
+    try:
+        ref = ir.files("scc_carla").joinpath("ansible")
+        with ir.as_file(ref) as p:
+            shutil.copytree(p, ansible_dest, dirs_exist_ok=True)
+        console.print(
+            f"[green]✓[/green] Scaffolding Ansible recipes into [bold]{ansible_dest}[/bold]"
+        )
+    except Exception as e:  # noqa: BLE001
+        console.print(f"[bold red]Failed to scaffold Ansible recipes: {e}[/bold red]")
+        raise typer.Exit(code=1)
 
-    # 1. Install provider dependencies if requested
-    if install_deps and shutil.which("uv"):
+    # 2. Check if user wants base workspace only
+    if no_provider:
+        console.print(
+            f"\n[bold green]Base workspace initialized successfully in {target_dir}![/bold green]\n"
+            "Ansible recipes are staged in [bold]ansible/[/bold].\n"
+            "Run [bold]scc provider add <helvetios|libvirt>[/bold] when ready to configure a provider."
+        )
+        return
+
+    # 3. Provider selection and configuration
+    chosen_prov = provider
+    if chosen_prov is None:
+        if sys.stdin.isatty():
+            console.print(
+                "\n[bold cyan]Select a cluster provider to configure:[/bold cyan]"
+            )
+            console.print("  [bold]1[/bold]) Helvetios HPC (HPE iLO BMC baremetal)")
+            console.print(
+                "  [bold]2[/bold]) Libvirt VM (Local QEMU/KVM virtual machines)"
+            )
+            console.print(
+                "  [bold]3[/bold]) Base workspace only (recipes without provider)"
+            )
+            choice = typer.prompt("Enter choice [1/2/3]", default="1")
+            if choice in ("1", "helvetios", "bmc"):
+                chosen_prov = "helvetios"
+                team_id = typer.prompt("Team ID", default=team_id or 72, type=int)
+                default_user = username or f"scct-26{team_id:02d}"
+                username = typer.prompt("Cluster username", default=default_user)
+                bastion = typer.prompt(
+                    "Bastion SSH host", default=bastion or "bastion.helvetios.epfl.ch"
+                )
+                profile = profile or "hpc"
+            elif choice in ("2", "vm", "libvirt"):
+                chosen_prov = "libvirt"
+                profile = typer.prompt(
+                    "Profile (standard / hw-optimized)", default=profile or "standard"
+                )
+            else:
+                console.print(
+                    f"\n[bold green]Base workspace initialized successfully in {target_dir}![/bold green]\n"
+                    "Run [bold]scc provider add <helvetios|libvirt>[/bold] when ready."
+                )
+                return
+        else:
+            chosen_prov = "vm"
+            profile = profile or "standard"
+
+    canon_prov = (
+        "helvetios" if chosen_prov.lower() in ("helvetios", "bmc") else "libvirt"
+    )
+
+    # 4. Install provider dependencies if in a uv project workspace
+    if install_deps and (target_dir / "pyproject.toml").exists() and shutil.which("uv"):
         console.print(
             f"[cyan]Installing Python dependencies for provider [bold]{canon_prov}[/bold] via uv sync...[/cyan]"
         )
@@ -97,58 +169,20 @@ def init(
                 f"[yellow]⚠ Failed to install dependencies via uv sync: {e}[/yellow]"
             )
 
-    values_path = target_dir / "values.yaml"
-    templates_dir = target_dir / "templates"
-
-    source_config = _get_preset_config(provider, profile)
-    if not source_config.exists():
-        console.print(f"[bold red]Preset config not found: {source_config}[/bold red]")
-        raise typer.Exit(code=1)
-
-    # 2. Copy values.yaml
-    if values_path.exists():
-        console.print(
-            f"[yellow]values.yaml already exists at {values_path}, keeping existing.[/yellow]"
-        )
-    else:
-        shutil.copyfile(source_config, values_path)
-        console.print(
-            f"[green]✓[/green] Created [bold]{values_path}[/bold] (profile: {provider}/{profile})"
-        )
-
-    # 3. Copy templates
-    templates_dir.mkdir(parents=True, exist_ok=True)
-    with get_provider_templates_dir(provider) as pkg_templates:
-        if pkg_templates and pkg_templates.exists():
-            for item in pkg_templates.rglob("*.j2"):
-                rel = item.relative_to(pkg_templates)
-                dest = templates_dir / rel
-                dest.parent.mkdir(parents=True, exist_ok=True)
-                if not dest.exists():
-                    shutil.copyfile(item, dest)
-                    console.print(f"  [cyan]+[/cyan] Staged template: templates/{rel}")
-        else:
-            console.print(
-                f"  [yellow]![/yellow] No bundled templates found for provider '{provider}'."
-            )
-
-    # 4. Provider preflight checks
-    if canon_prov == "libvirt":
-        qemu_img = shutil.which("qemu-img")
-        virsh = shutil.which("virsh")
-        if not qemu_img:
-            console.print(
-                "  [yellow]⚠ 'qemu-img' not found on PATH. Install qemu-img or qemu-utils.[/yellow]"
-            )
-        if not virsh:
-            console.print(
-                "  [yellow]⚠ 'virsh' not found on PATH. Install libvirt-client.[/yellow]"
-            )
+    # 5. Scaffold provider preset and templates
+    scaffold_provider(
+        provider=chosen_prov,
+        profile=profile,
+        team_id=team_id,
+        username=username,
+        bastion=bastion,
+        target_dir=target_dir,
+    )
 
     console.print(
         f"\n[bold green]Cluster workspace initialized successfully in {target_dir}![/bold green]\n"
-        f"Provider: [bold]{canon_prov}[/bold] | Profile: [bold]{profile}[/bold]\n"
-        f"Customize your parameters in [bold]values.yaml[/bold] and templates in [bold]templates/[/bold]."
+        f"Provider: [bold]{canon_prov}[/bold] | Profile: [bold]{profile or 'default'}[/bold]\n"
+        f"Customize parameters in [bold]values.yaml[/bold], templates in [bold]templates/[/bold], and recipes in [bold]ansible/[/bold]."
     )
 
 
@@ -185,22 +219,18 @@ def show(
         typer.Option(
             "--manifest",
             "-m",
-            help="Path to cluster manifest (defaults to values.yaml or active config)",
+            help="Path to cluster manifest (defaults to values.yaml)",
         ),
     ] = Path("values.yaml"),
 ) -> None:
     """Pretty-print declared cluster topology, network parameters, and node sizing."""
     path = manifest_path.expanduser().resolve()
     if not path.exists():
-        # Fallback to configs/clusters/vm-standard.yaml
-        fallback = (
-            Path(__file__).parents[3] / "configs" / "clusters" / "vm-standard.yaml"
+        console.print(
+            f"[bold red]No cluster manifest found at {path}.[/bold red]\n"
+            "[dim]Run 'scc init' or 'scc provider add <provider>' to initialize a workspace.[/dim]"
         )
-        if fallback.exists():
-            path = fallback
-        else:
-            console.print(f"[bold red]No cluster manifest found at {path}[/bold red]")
-            raise typer.Exit(code=1)
+        raise typer.Exit(code=1)
 
     manifest = load_manifest(path)
     console.print(
@@ -240,20 +270,27 @@ def show(
 
 @cluster_app.command("list")
 def list_clusters() -> None:
-    """List available pre-packaged cluster configs and local workspaces."""
-    configs_dir = Path(__file__).parents[3] / "configs" / "clusters"
+    """List available pre-packaged cluster presets and local workspaces."""
     table = Table(title="Available Cluster Configurations", header_style="bold cyan")
-    table.add_column("Profile / Config File")
+    table.add_column("Profile / Preset")
     table.add_column("Provider")
     table.add_column("Description")
 
-    if configs_dir.exists():
-        for p in sorted(configs_dir.glob("*.yaml")):
-            try:
-                m = load_manifest(p)
-                table.add_row(p.name, m.provider, m.description)
-            except Exception:  # noqa: BLE001
-                table.add_row(p.name, "unknown", "-")
+    # Inspect registered providers and presets
+    for prov_name in container.providers.list_providers():
+        try:
+            cls = container.providers.get_provider_class(prov_name)
+            for preset in cls.list_presets():
+                try:
+                    yaml_str = cls.get_preset_config(preset)
+                    m = parse_manifest(yaml_str)
+                    table.add_row(
+                        f"{prov_name}/{preset}", prov_name, m.description or "-"
+                    )
+                except Exception:  # noqa: BLE001
+                    table.add_row(f"{prov_name}/{preset}", prov_name, "-")
+        except Exception:  # noqa: BLE001, S110
+            pass
 
     # Local workspace values.yaml
     local_val = Path.cwd() / "values.yaml"
@@ -263,3 +300,11 @@ def list_clusters() -> None:
             table.add_row("./values.yaml (active)", m.provider, m.description)
 
     console.print(table)
+
+
+from scc_carla.commands.plan import plan_cli
+
+cluster_app.command(
+    "plan",
+    help="Compute execution plan comparing declared manifest against live state",
+)(plan_cli)

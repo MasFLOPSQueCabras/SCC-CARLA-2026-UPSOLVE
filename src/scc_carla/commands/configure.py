@@ -30,8 +30,16 @@ def configure_command(
     Verifies machine reachability first; if no machines are available, informs the user.
     When machines are available, scopes configuration to the reachable subset.
     """
-    project_root = Path(__file__).resolve().parent.parent.parent.parent
-    ansible_dir = project_root / "ansible"
+    ansible_dir = (Path.cwd() / "ansible").resolve()
+    if not ansible_dir.is_dir():
+        console.print(
+            f"[bold red]Ansible recipes directory not found: {ansible_dir}[/bold red]\n"
+            "[dim]Run 'scc init' first to scaffold workspace recipes.[/dim]"
+        )
+        if exit_on_error:
+            sys.exit(1)
+        return False
+
     cfg_file = ansible_dir / "ansible.cfg"
     inv_file = ansible_dir / "inventory" / "dynamic_inventory.py"
     if not inv_file.exists():

@@ -37,9 +37,6 @@ def _locate_cluster_manifest(
     candidates = [
         cluster_option,
         Path.cwd() / "values.yaml",
-        Path(__file__).parents[3] / "values.yaml",
-        Path(__file__).parents[3] / "configs" / "clusters" / "vm-standard.yaml",
-        Path(__file__).parents[3] / "configs" / "clusters" / "helvetios-hpc.yaml",
     ]
 
     for p in candidates:
@@ -319,3 +316,20 @@ def _plan_helvetios_node(
             ActionType.UPDATE,
         )
         counts[ActionType.UPDATE] += 1
+
+
+from typing import Annotated
+
+
+def plan_cli(
+    cluster: Annotated[
+        Path | None,
+        typer.Option(
+            "--cluster",
+            "-c",
+            help="Path to cluster manifest or values.yaml override file",
+        ),
+    ] = None,
+) -> None:
+    """Compute and show execution plan comparing declared manifest against live state."""
+    plan_command(cluster_path=cluster)

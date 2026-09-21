@@ -27,12 +27,26 @@ class SSHSocksTunnel:
         self.local_port = local_port
         self.process: subprocess.Popen[bytes] | None = None
 
-    def start(self, timeout: float = 10.0) -> None:
+    def start(self, timeout: float = 3.0) -> None:
         if self._is_port_open():
             self.local_port = _find_free_local_port()
 
         self.process = subprocess.Popen(
-            ["ssh", "-D", str(self.local_port), "-N", self.bastion_ssh_host],
+            [
+                "ssh",
+                "-o",
+                "ConnectTimeout=2",
+                "-o",
+                "BatchMode=yes",
+                "-o",
+                "StrictHostKeyChecking=no",
+                "-o",
+                "UserKnownHostsFile=/dev/null",
+                "-D",
+                str(self.local_port),
+                "-N",
+                self.bastion_ssh_host,
+            ],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
@@ -41,6 +55,10 @@ class SSHSocksTunnel:
         while time.time() - start < timeout:
             if self._is_port_open():
                 return
+            if self.process.poll() is not None:
+                raise ConnectionError(
+                    f"SSH tunnel to {self.bastion_ssh_host} exited prematurely with code {self.process.returncode}"
+                )
             time.sleep(0.2)
 
         self.stop()
@@ -214,12 +232,21 @@ class BMCController:
     def _ensure_transport(self) -> str | None:
         if self._is_on_bastion():
             return None
+        if getattr(self, "_transport_failed", False):
+            raise ConnectionError(
+                f"Bastion transport to {self.bastion_ssh_host} is unavailable."
+            )
         if self._tunnel is None:
             self._tunnel = SSHSocksTunnel(
                 bastion_ssh_host=self.bastion_ssh_host,
                 local_port=self.socks_port,
             )
-            self._tunnel.start()
+            try:
+                self._tunnel.start()
+            except Exception:
+                self._transport_failed = True
+                self._tunnel = None
+                raise
         return f"socks5://127.0.0.1:{self._tunnel.local_port}"
 
     def close(self) -> None:
@@ -256,7 +283,7 @@ class BMCController:
         # Default fallback formula
         return (f"10.1.72.{node_id}", self.default_bmc_user, self.default_bmc_password)
 
-    def get_client(self, node_id: int) -> RedfishClient:
+    def get_client(self, node_id: int, timeout: float = 30.0) -> RedfishClient:
         proxy_url = self._ensure_transport()
         bmc_ip, user, pw = self._get_node_bmc_info(node_id)
         return RedfishClient(
@@ -264,17 +291,21 @@ class BMCController:
             bmc_user=user,
             bmc_password=pw,
             proxy_url=proxy_url,
+            timeout=timeout,
         )
 
-    def get_power_status(self, node_id: int) -> str:
+    def get_power_status(self, node_id: int, timeout: float = 2.0) -> str:
+        if getattr(self, "_unreachable", False):
+            return "UNKNOWN"
         try:
-            with self.get_client(node_id) as client:
+            with self.get_client(node_id, timeout=timeout) as client:
                 resp = client.get("/redfish/v1/Systems/1/")
                 if resp.status_code == 200:
                     power = resp.json().get("PowerState", "").upper()
                     if power in ("ON", "OFF"):
                         return power
         except (httpx2.HTTPError, OSError) as err:
+            self._unreachable = True
             logger.debug("Failed power status on Node %s: %s", node_id, err)
         return "UNKNOWN"
 
