@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -7,7 +8,7 @@ import jinja2
 class TemplateEngine:
     """Jinja2 template engine supporting multi-directory search paths."""
 
-    def __init__(self, search_paths: list[Path | str] | None = None) -> None:
+    def __init__(self, search_paths: Sequence[Path | str] | None = None) -> None:
         default_paths: list[Path] = [Path.cwd() / "templates"]
         if search_paths:
             resolved_paths = [Path(p).expanduser().resolve() for p in search_paths]

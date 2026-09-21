@@ -37,8 +37,7 @@ def ensure_cached_cloud_image(
                 f"[cyan]Downloading {image_name} from {source} to internal cache...[/cyan]"
             )
             subprocess.run(
-                ["curl", "-L", "-o", str(cache_path), source],
-                check=True,
+                ["curl", "-L", "-o", str(cache_path), source], check=True, timeout=1800
             )
     else:
         file_str = source.removeprefix("file://")

@@ -40,6 +40,7 @@ def ssh_atomic_lease_lock(
         capture_output=True,
         text=True,
         check=True,
+        timeout=1800,
     )
     status = res.stdout.strip()
     if status != "ACQUIRED":
@@ -56,4 +57,5 @@ def ssh_atomic_lease_lock(
                 ["ssh", ssh_host, f'bash -c "{release_cmd}"'],
                 capture_output=True,
                 check=False,
+                timeout=1800,
             )

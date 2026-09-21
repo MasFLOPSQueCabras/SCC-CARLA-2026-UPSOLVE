@@ -61,8 +61,7 @@ def ensure_cached_iso(
                 f"[cyan]Downloading {settings.iso_name} from {source} to internal cache...[/cyan]"
             )
             subprocess.run(
-                ["curl", "-L", "-o", str(cache_path), source],
-                check=True,
+                ["curl", "-L", "-o", str(cache_path), source], check=True, timeout=1800
             )
             patch_iso_in_place(cache_path)
         else:

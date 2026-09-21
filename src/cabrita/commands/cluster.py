@@ -160,7 +160,9 @@ def init(
             f"[cyan]Installing Python dependencies for provider [bold]{canon_prov}[/bold] via uv sync...[/cyan]"
         )
         try:
-            subprocess.run(["uv", "sync", "--extra", canon_prov], check=True)
+            subprocess.run(
+                ["uv", "sync", "--extra", canon_prov], check=True, timeout=1800
+            )
             console.print(
                 f"[green]✓[/green] Dependencies for [bold]{canon_prov}[/bold] installed successfully."
             )
@@ -303,9 +305,9 @@ def list_clusters() -> None:
     console.print(table)
 
 
-from cabrita.commands.plan import plan_cli
+from cabrita.commands.workflow import plan
 
 cluster_app.command(
     "plan",
     help="Compute execution plan comparing declared manifest against live state",
-)(plan_cli)
+)(plan)

@@ -156,7 +156,7 @@ def configure_command(
         env["ANSIBLE_SSH_ARGS"] = ssh_args
 
     console.print(f"[cyan]Executing Ansible playbook '{playbook}'...[/cyan]")
-    res = subprocess.run(cmd, env=env, check=False)
+    res = subprocess.run(cmd, env=env, check=False, timeout=1800)
     if res.returncode != 0:
         console.print(
             f"[bold red]Playbook execution failed with exit code {res.returncode}.[/bold red]"

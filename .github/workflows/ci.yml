@@ -131,5 +131,8 @@ jobs:
 
       - name: Verify cluster execution plan (Generic Libvirt)
         run: |
-          uv run cabrita up --dry-run --cluster configs/clusters/vm-standard.yaml
-          uv run cabrita down --dry-run --cluster configs/clusters/vm-standard.yaml
+          touch /tmp/cabrita-plan-fixture.qcow2
+          uv run cabrita init /tmp/cabrita-plan --artifact /tmp/cabrita-plan-fixture.qcow2
+          uv run cabrita validate --cluster /tmp/cabrita-plan/cluster.yaml
+          uv run cabrita up --dry-run --cluster /tmp/cabrita-plan/cluster.yaml
+          uv run cabrita down --dry-run --cluster /tmp/cabrita-plan/cluster.yaml

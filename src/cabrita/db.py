@@ -95,7 +95,9 @@ def _ensure_worker_synced(settings: ClusterSettings) -> None:
             settings.bastion_ssh_host,
             f"cat {remote_hash_file} 2>/dev/null || true",
         ]
-        res = subprocess.run(check_cmd, capture_output=True, text=True, check=False)
+        res = subprocess.run(
+            check_cmd, capture_output=True, text=True, check=False, timeout=1800
+        )
         if res.returncode != 0:
             raise ConnectionError(
                 f"Cannot connect to bastion host {settings.bastion_ssh_host} (exit code {res.returncode})"
@@ -126,7 +128,7 @@ def _ensure_worker_synced(settings: ClusterSettings) -> None:
             settings.bastion_ssh_host,
             f"mkdir -p {remote_dir}",
         ]
-        subprocess.run(mkdir_cmd, check=True, capture_output=True)
+        subprocess.run(mkdir_cmd, check=True, capture_output=True, timeout=1800)
 
         scp_cmd = [
             "scp",
@@ -148,7 +150,7 @@ def _ensure_worker_synced(settings: ClusterSettings) -> None:
             str(local_worker_path),
             f"{settings.bastion_ssh_host}:{remote_worker_file}",
         ]
-        subprocess.run(scp_cmd, check=True)
+        subprocess.run(scp_cmd, check=True, timeout=1800)
 
         write_hash_cmd = [
             "ssh",
@@ -169,7 +171,7 @@ def _ensure_worker_synced(settings: ClusterSettings) -> None:
             settings.bastion_ssh_host,
             f"echo '{local_hash}' > {remote_hash_file}",
         ]
-        subprocess.run(write_hash_cmd, check=True, capture_output=True)
+        subprocess.run(write_hash_cmd, check=True, capture_output=True, timeout=1800)
         _WORKER_SYNCED = True
 
 
@@ -214,6 +216,7 @@ def _run_bastion_ssh_action(
             text=True,
             capture_output=True,
             check=False,
+            timeout=1800,
         )
         if res.returncode == 0:
             try:
@@ -246,6 +249,7 @@ def _run_bastion_ssh_action(
                     ],
                     capture_output=True,
                     check=False,
+                    timeout=1800,
                 )
         time.sleep(0.3 * (attempt + 1))
 

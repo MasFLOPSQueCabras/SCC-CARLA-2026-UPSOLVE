@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
@@ -107,11 +108,19 @@ class NodeSpec(BaseModel):
     hardware: HardwareSpec | None = None
 
 
+class AccessSpec(BaseModel):
+    public_key: Path = Path("~/.ssh/id_ed25519.pub")
+    private_key: Path = Path("~/.ssh/id_ed25519")
+    timeout: int = Field(default=1800, gt=0, le=86400)
+    max_workers: int = Field(default=4, ge=1, le=8)
+
+
 class ClusterManifest(BaseModel):
     schema_version: int = 1
     name: str = Field(pattern=r"^[a-z][a-z0-9-]{0,47}$")
     provider: Literal["libvirt", "helvetios", "bmc", "chameleon"] = "libvirt"
     description: str = ""
+    access: AccessSpec = Field(default_factory=AccessSpec)
     bootstrap: BootstrapSpec = Field(default_factory=BootstrapSpec)
     artifacts: dict[str, ArtifactSpec] = Field(default_factory=dict)
     configuration: ConfigurationSpec = Field(default_factory=ConfigurationSpec)

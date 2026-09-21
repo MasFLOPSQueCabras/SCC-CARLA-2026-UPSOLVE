@@ -25,6 +25,9 @@ class ResolvedCluster:
                     .expanduser()
                     .resolve()
                 )
+        for field in ("public_key", "private_key"):
+            value = getattr(manifest.access, field).expanduser()
+            setattr(manifest.access, field, (source.parent / value).resolve())
         bootstrap = manifest.bootstrap
         for field in ("user_data", "network_config", "kickstart", "templates"):
             value = getattr(bootstrap, field)

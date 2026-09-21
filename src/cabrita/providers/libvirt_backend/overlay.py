@@ -39,7 +39,9 @@ def ensure_cached_cloud_image(
                 f"[cyan]Downloading {target_name} from {image_source} to internal cache...[/cyan]"
             )
             subprocess.run(
-                ["curl", "-L", "-o", str(cache_path), image_source], check=True
+                ["curl", "-L", "-o", str(cache_path), image_source],
+                check=True,
+                timeout=1800,
             )
     else:
         file_str = image_source.removeprefix("file://")
@@ -86,7 +88,7 @@ def create_cow_overlay(
         str(overlay_path.resolve()),
         size,
     ]
-    subprocess.run(cmd, check=True, capture_output=True, text=True)
+    subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=1800)
     try:
         overlay_path.chmod(0o666)
     except OSError:

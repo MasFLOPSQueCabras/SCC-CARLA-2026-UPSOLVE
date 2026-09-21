@@ -118,8 +118,10 @@ class LibvirtProvider(NodeProvider):
         dom_name = self._get_domain_name(node_id)
         try:
             return self.conn.lookupByName(dom_name)
-        except libvirt.libvirtError:
-            return None
+        except libvirt.libvirtError as exc:
+            if exc.get_error_code() == libvirt.VIR_ERR_NO_DOMAIN:
+                return None
+            raise
 
     def _get_node_spec(self, node_id: int) -> NodeSpec | None:
         if self.manifest:
@@ -127,6 +129,12 @@ class LibvirtProvider(NodeProvider):
                 if n.id == node_id:
                     return n
         return None
+
+    def node_exists(self, node_id: int) -> bool:
+        return (
+            self._get_domain(node_id) is not None
+            or (self.storage_dir / f"{self._get_domain_name(node_id)}.qcow2").exists()
+        )
 
     def get_node_ip(self, node_id: int) -> str:
         spec = self._get_node_spec(node_id)
@@ -213,8 +221,9 @@ class LibvirtProvider(NodeProvider):
         except OSError:
             pass
 
-        # Cleanup existing domain if present
-        if self._get_domain(node_id) is not None:
+        if self.node_exists(node_id):
+            if not kwargs.get("reinstall", False):
+                raise RuntimeError("Existing node requires explicit --reinstall")
             self.teardown_node(node_id)
 
         spec = self._get_node_spec(node_id)
@@ -329,6 +338,7 @@ class LibvirtProvider(NodeProvider):
                 ["qemu-img", "create", "-f", "qcow2", str(disk_path), overlay_size],
                 check=True,
                 capture_output=True,
+                timeout=1800,
             )
             cidata_iso_path = None
 
@@ -366,7 +376,7 @@ class LibvirtProvider(NodeProvider):
                         "pubkey": pubkey,
                         "target_disk": "vda",
                     }
-                    te.render_to_file("kickstart/ks.cfg.j2", context, ks_cfg_path)
+                    te.render_to_file("ks.cfg.j2", context, ks_cfg_path)
 
                 if Path(ks_cfg_path).exists():
                     oemdrv_target = self.storage_dir / f"{dom_name}_oemdrv.img"
@@ -424,8 +434,6 @@ class LibvirtProvider(NodeProvider):
             progress_callback("Defining and starting VM domain in QEMU/KVM...")
 
         domain_xml = te.render("domain.xml.j2", domain_context)
-        if self.conn is None:
-            return False
         dom = self.conn.defineXML(domain_xml)
         if dom is None:
             return False
@@ -438,27 +446,16 @@ class LibvirtProvider(NodeProvider):
     def teardown_node(self, node_id: int) -> bool:
         dom = self._get_domain(node_id)
         if dom is not None:
-            with contextlib.suppress(libvirt.libvirtError):
-                state, _ = dom.state()
-                if state != libvirt.VIR_DOMAIN_SHUTOFF:
-                    dom.destroy()
-            with contextlib.suppress(libvirt.libvirtError):
-                dom.undefineFlags(
-                    libvirt.VIR_DOMAIN_UNDEFINE_MANAGED_SAVE
-                    | libvirt.VIR_DOMAIN_UNDEFINE_SNAPSHOTS_METADATA
-                    | libvirt.VIR_DOMAIN_UNDEFINE_NVRAM
-                )
-
-        dom_name = self._get_domain_name(node_id)
-        disk_path = self.storage_dir / f"{dom_name}.qcow2"
-        cidata_target = self.storage_dir / f"{dom_name}_cidata.img"
-        oemdrv_target = self.storage_dir / f"{dom_name}_oemdrv.img"
-
-        for p in (disk_path, cidata_target, oemdrv_target):
-            if p.exists():
-                with contextlib.suppress(OSError):
-                    p.unlink()
-
+            if dom.isActive():
+                dom.destroy()
+            dom.undefineFlags(
+                libvirt.VIR_DOMAIN_UNDEFINE_MANAGED_SAVE
+                | libvirt.VIR_DOMAIN_UNDEFINE_SNAPSHOTS_METADATA
+                | libvirt.VIR_DOMAIN_UNDEFINE_NVRAM
+            )
+        name = self._get_domain_name(node_id)
+        for suffix in (".qcow2", "_cidata.img", "_oemdrv.img"):
+            (self.storage_dir / f"{name}{suffix}").unlink(missing_ok=True)
         return True
 
     def close(self) -> None:

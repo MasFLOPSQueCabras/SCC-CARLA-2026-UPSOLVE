@@ -38,6 +38,7 @@ def inspect_image(image_path: Path) -> ImageMetadata:
                 capture_output=True,
                 text=True,
                 check=True,
+                timeout=1800,
             )
             data = json.loads(res.stdout)
             return ImageMetadata(
@@ -71,6 +72,7 @@ def convert_qcow2_to_raw(qcow2_path: Path, raw_path: Path) -> Path:
     subprocess.run(
         ["qemu-img", "convert", "-f", "qcow2", "-O", "raw", str(src), str(dst)],
         check=True,
+        timeout=1800,
     )
     return dst
 
@@ -85,6 +87,7 @@ def compress_zstd(source_path: Path, dest_path: Path, level: int = 6) -> Path:
         subprocess.run(
             ["zstd", f"-{level}", "-T0", "-f", str(src), "-o", str(dst)],
             check=True,
+            timeout=1800,
         )
         return dst
 

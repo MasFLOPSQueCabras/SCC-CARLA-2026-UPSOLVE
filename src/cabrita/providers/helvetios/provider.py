@@ -123,6 +123,9 @@ class HelvetiosProvider(NodeProvider):
                     return n
         return None
 
+    def node_exists(self, node_id: int) -> bool:
+        return self.get_power_status(node_id) != PowerState.UNKNOWN
+
     def get_node_ip(self, node_id: int) -> str:
         spec = self._get_node_spec(node_id)
         if spec:
@@ -187,7 +190,11 @@ class HelvetiosProvider(NodeProvider):
                 dest_iso_path.parent.mkdir(parents=True, exist_ok=True)
                 cached = self.paths.iso_cache_dir / iso_name
                 if cached.exists():
-                    subprocess.run(["cp", str(cached), str(dest_iso_path)], check=True)
+                    subprocess.run(
+                        ["cp", str(cached), str(dest_iso_path)],
+                        check=True,
+                        timeout=1800,
+                    )
             return
 
         check_script = template_engine.render(
@@ -201,6 +208,7 @@ class HelvetiosProvider(NodeProvider):
                 capture_output=True,
                 text=True,
                 check=True,
+                timeout=1800,
             )
             status = res.stdout.strip()
         except subprocess.CalledProcessError, OSError:
@@ -216,6 +224,7 @@ class HelvetiosProvider(NodeProvider):
                         f"{self.bastion_ssh_host}:{serve_path}/{iso_name}",
                     ],
                     check=True,
+                    timeout=1800,
                 )
 
     @contextmanager
@@ -312,6 +321,7 @@ class HelvetiosProvider(NodeProvider):
                     f"{self.bastion_ssh_host}:{serve_path}/{oemdrv_name}",
                 ],
                 check=True,
+                timeout=1800,
             )
 
         # 4. Set BIOS profile

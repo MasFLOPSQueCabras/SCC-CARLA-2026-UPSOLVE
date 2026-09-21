@@ -195,7 +195,7 @@ def build_cmd(
     cmd.extend([str(src_cand), str(target)])
 
     try:
-        subprocess.run(cmd, check=True)
+        subprocess.run(cmd, check=True, timeout=1800)
         try:
             target.chmod(0o644)
         except OSError:

@@ -106,6 +106,11 @@ def test_deploy_cli_failure_exit(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(deploy, "deploy_command", lambda *a, **kw: False)
-    result = CliRunner().invoke(app, ["deploy"])
+    from cabrita.commands import workflow
+
+    def unavailable(path: Path):
+        raise RuntimeError("Provider unavailable")
+
+    monkeypatch.setattr(workflow, "service_context", unavailable)
+    result = CliRunner().invoke(app, ["deploy", "--yes"])
     assert result.exit_code == 1

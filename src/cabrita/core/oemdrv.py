@@ -24,7 +24,7 @@ def generate_oemdrv(
     )
     script_path.chmod(0o755)
 
-    subprocess.run(["bash", str(script_path)], check=True)
+    subprocess.run(["bash", str(script_path)], check=True, timeout=1800)
     try:
         output_path.chmod(0o666)
     except OSError:

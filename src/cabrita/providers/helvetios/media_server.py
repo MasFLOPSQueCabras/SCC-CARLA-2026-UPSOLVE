@@ -91,6 +91,7 @@ class EphemeralRangeHTTPServer:
             text=True,
             check=False,
             capture_output=True,
+            timeout=1800,
         )
         if check_alive.returncode == 0:
             logger.info(
@@ -129,6 +130,7 @@ class EphemeralRangeHTTPServer:
                 text=True,
                 check=False,
                 capture_output=True,
+                timeout=1800,
             )
             if verify_res.returncode == 0:
                 logger.info(
@@ -166,6 +168,7 @@ class EphemeralRangeHTTPServer:
             text=True,
             check=False,
             capture_output=True,
+            timeout=1800,
         )
 
     @classmethod
@@ -192,5 +195,6 @@ class EphemeralRangeHTTPServer:
             text=True,
             check=False,
             capture_output=True,
+            timeout=1800,
         )
         return res.returncode == 0

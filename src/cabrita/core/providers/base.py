@@ -111,6 +111,15 @@ class NodeProvider(ABC):
     def get_power_metrics(self, node_id: int) -> dict[str, Any] | None:
         """Retrieves live power telemetry (Watts, etc.) if supported by provider."""
 
+    def get_bios_settings(self, node_id: int) -> dict[str, Any]:
+        raise NotImplementedError("Provider does not support BIOS settings")
+
+    def set_bios_settings(self, node_id: int, attributes: dict[str, Any]) -> bool:
+        raise NotImplementedError("Provider does not support BIOS settings")
+
+    def node_exists(self, node_id: int) -> bool:
+        raise NotImplementedError("Provider must implement resource discovery")
+
     @abstractmethod
     def provision_node(
         self,
