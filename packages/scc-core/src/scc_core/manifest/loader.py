@@ -10,6 +10,17 @@ from scc_core.manifest.models import ClusterManifest, HardwareSpec, NodeSpec, VM
 _ENV_PATTERN = re.compile(r"\$\{([A-Za-z0-9_]+)(?::-(.*?))?\}")
 
 
+def _merge_defaults(base: dict[str, Any], overrides: dict[str, Any]) -> dict[str, Any]:
+    result = base.copy()
+    for key, value in overrides.items():
+        match result.get(key), value:
+            case dict() as inherited, dict() as override:
+                result[key] = _merge_defaults(inherited, override)
+            case _:
+                result[key] = value
+    return result
+
+
 def interpolate_env_vars(text: str) -> str:
     def _replace(match: re.Match[str]) -> str:
         var_name = match.group(1)
@@ -34,7 +45,9 @@ def parse_manifest(raw_text: str) -> ClusterManifest:
         if manifest.provider in ("libvirt", "vm"):
             base_vm = defaults.vm.model_dump()
             if node.vm is not None:
-                base_vm.update(node.vm.model_dump(exclude_unset=True))
+                base_vm = _merge_defaults(
+                    base_vm, node.vm.model_dump(exclude_unset=True)
+                )
             node_dict["vm"] = VMSpec.model_validate(base_vm)
 
         if manifest.provider in ("helvetios", "bmc"):

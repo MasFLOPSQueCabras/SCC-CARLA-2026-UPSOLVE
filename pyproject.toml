@@ -51,6 +51,18 @@ scc-provider-helvetios = { workspace = true }
 
 [dependency-groups]
 dev = [
+    "pytest>=9.1.1",
     "ruff>=0.16.8",
     "ty>=0.0.81",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--strict-markers -ra"
+markers = ["e2e: requires explicitly enabled deployment infrastructure"]
+
+[tool.ruff]
+target-version = "py314"
+
+[tool.ty.environment]
+python-version = "3.14"

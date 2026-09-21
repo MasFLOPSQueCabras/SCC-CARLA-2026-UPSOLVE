@@ -3,6 +3,7 @@ name: ci
 on:
   push:
     paths:
+      - 'tests/**'
       - 'src/**'
       - 'packages/**'
       - 'configs/**'
@@ -13,6 +14,7 @@ on:
       - '.github/workflows/**'
   pull_request:
     paths:
+      - 'tests/**'
       - 'src/**'
       - 'packages/**'
       - 'configs/**'
@@ -78,6 +80,9 @@ jobs:
 
       - name: Lint
         run: uv run ruff check --output-format=github .
+
+      - name: Unit tests
+        run: uv run pytest
 
       - name: Type check
         run: uv run ty check --output-format=github

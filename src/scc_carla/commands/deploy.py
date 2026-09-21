@@ -177,10 +177,10 @@ def _provision_single_node(
     else:
         progress.update(
             task_id,
-            description=f"[bold yellow]⚠ {hostname}[/bold yellow]: OS installed but Ansible had warnings ({node_ip})",
+            description=f"[bold red]✗ {hostname}[/bold red]: OS installed but Ansible configuration failed ({node_ip})",
             completed=100,
         )
-        return True
+        return False
 
 
 def deploy_command(
@@ -423,7 +423,7 @@ def deploy_cli(
                 or manifest.defaults.os.cloud_image
             )
 
-    deploy_command(
+    succeeded = deploy_command(
         settings,
         node=node,
         pubkey_path=pubkey,
@@ -434,3 +434,5 @@ def deploy_cli(
         provider=provider,
         image=image,
     )
+    if not succeeded:
+        raise typer.Exit(code=1)
