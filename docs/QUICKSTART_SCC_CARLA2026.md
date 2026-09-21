@@ -72,7 +72,7 @@ flowchart TD
 ```bash
 uv run cabrita init --provider helvetios --dir .
 ```
-*Creates `./values.yaml` customized for the Helvetios bare-metal profile and stages Kickstart templates in `./templates/`.*
+*Creates `./cluster.yaml` customized for the Helvetios bare-metal profile and stages Kickstart templates in `./templates/`.*
 
 ---
 

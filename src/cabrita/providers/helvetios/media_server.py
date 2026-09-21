@@ -1,56 +1,39 @@
-import functools
-import http.server
-import logging
+"""A media server owned by one deployment session; never kills other listeners."""
+
+import hashlib
+import selectors
+import shlex
 import socket
 import subprocess
-import threading
-import time
+import sys
 from pathlib import Path
 from types import TracebackType
 from typing import Self
 
-from RangeHTTPServer import RangeRequestHandler
-
-from cabrita.core.templating import TemplateEngine
-
-logger = logging.getLogger(__name__)
+from cabrita.bootstrap import range_server
 
 
-def is_running_on_bastion(bastion_hostname: str) -> bool:
-    return socket.gethostname() == bastion_hostname
+def is_running_on_bastion(bastion_hostname: str = "carlanga") -> bool:
+    return socket.gethostname().lower() == bastion_hostname.lower()
 
 
 class EphemeralRangeHTTPServer:
-    """Ephemeral HTTP Range server running in user-space on the bastion.
-
-    Serves ISO and OEMDRV images at high speeds to HPE iLO BMC over the internal network.
-    Automatically starts the server on the bastion via SSH and tears it down on exit,
-    leaving zero lingering background processes or state, and requiring zero sudo/root privileges.
-    """
-
     def __init__(
         self,
         port: int,
         bind_ip: str,
         bastion_ssh_host: str,
         bastion_hostname: str,
-        template_engine: TemplateEngine,
         remote_serve_dir: Path | str | None = None,
-        serve_dir: Path | None = None,
     ) -> None:
         self.port = port
         self.bind_ip = bind_ip
-        self.bastion_ssh_host = bastion_ssh_host
-        self.bastion_hostname = bastion_hostname
-        self.template_engine = template_engine
-        self.remote_serve_dir = remote_serve_dir or (Path.home() / "cabrita_serve")
-        self.serve_path = serve_dir or (Path.home() / "cabrita_serve")
-        self.on_bastion = is_running_on_bastion(self.bastion_hostname)
-
-        self._local_server: http.server.ThreadingHTTPServer | None = None
-        self._local_server_thread: threading.Thread | None = None
-        self._bastion_proc: subprocess.Popen[str] | None = None
-        self._reused_existing: bool = False
+        self.host = bastion_ssh_host
+        self.local = is_running_on_bastion(bastion_hostname)
+        self.directory = (
+            str(remote_serve_dir) if remote_serve_dir is not None else "~/cabrita_serve"
+        )
+        self.process: subprocess.Popen[bytes] | None = None
 
     def __enter__(self) -> Self:
         self.start()
@@ -65,136 +48,80 @@ class EphemeralRangeHTTPServer:
         self.stop()
 
     def start(self) -> None:
-        if self.on_bastion:
-            local_dir = Path(self.remote_serve_dir).expanduser()
-            local_dir.mkdir(parents=True, exist_ok=True)
-            handler = functools.partial(RangeRequestHandler, directory=str(local_dir))
-            self._local_server = http.server.ThreadingHTTPServer(
-                (self.bind_ip, self.port), handler
-            )
-            self._local_server_thread = threading.Thread(
-                target=self._local_server.serve_forever, daemon=True
-            )
-            self._local_server_thread.start()
-            logger.info(
-                "Bastion Range server listening on %s:%s", self.bind_ip, self.port
-            )
-            return
-
-        check_script = self.template_engine.render(
-            "scripts/check_port.sh.j2",
-            {"bind_ip": self.bind_ip, "port": self.port},
-        )
-        check_alive = subprocess.run(
-            ["ssh", self.bastion_ssh_host, "bash -s"],
-            input=check_script,
-            text=True,
-            check=False,
-            capture_output=True,
-            timeout=1800,
-        )
-        if check_alive.returncode == 0:
-            logger.info(
-                "Active Range HTTP server detected on bastion %s:%s. Reusing existing instance.",
+        script = Path(range_server.__file__)
+        if self.local:
+            argv = [
+                sys.executable,
+                str(script),
+                self.directory,
                 self.bind_ip,
-                self.port,
+                str(self.port),
+            ]
+        else:
+            digest = hashlib.sha256(script.read_bytes()).hexdigest()
+            remote_script = f"/tmp/cabrita-range-server-{digest}.py"
+            subprocess.run(
+                [
+                    "scp",
+                    "-o",
+                    "BatchMode=yes",
+                    "-o",
+                    "ConnectTimeout=10",
+                    str(script),
+                    f"{self.host}:{remote_script}",
+                ],
+                check=True,
+                capture_output=True,
+                timeout=60,
             )
-            self._reused_existing = True
-            return
-
-        self._reused_existing = False
-        start_script = self.template_engine.render(
-            "scripts/bastion_http_server.sh.j2",
-            {
-                "remote_serve_dir": str(self.remote_serve_dir),
-                "port": self.port,
-                "bind_ip": self.bind_ip,
-            },
-        )
-        self._bastion_proc = subprocess.Popen(
-            ["ssh", self.bastion_ssh_host, "bash -s"],
+            argv = [
+                "ssh",
+                "-o",
+                "BatchMode=yes",
+                "-o",
+                "ConnectTimeout=10",
+                self.host,
+                shlex.join(
+                    [
+                        "python3",
+                        remote_script,
+                        self.directory,
+                        self.bind_ip,
+                        str(self.port),
+                    ]
+                ),
+            ]
+        self.process = subprocess.Popen(
+            argv,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
+            stderr=subprocess.STDOUT,
         )
-        if self._bastion_proc.stdin:
-            self._bastion_proc.stdin.write(start_script)
-            self._bastion_proc.stdin.close()
-
-        for _ in range(15):
-            time.sleep(0.3)
-            verify_res = subprocess.run(
-                ["ssh", self.bastion_ssh_host, "bash -s"],
-                input=check_script,
-                text=True,
-                check=False,
-                capture_output=True,
-                timeout=1800,
-            )
-            if verify_res.returncode == 0:
-                logger.info(
-                    "Remote ephemeral HTTP server online on bastion at %s:%s",
-                    self.bind_ip,
-                    self.port,
-                )
-                return
+        assert self.process.stdout is not None
+        try:
+            with selectors.DefaultSelector() as selector:
+                selector.register(self.process.stdout, selectors.EVENT_READ)
+                if (
+                    not selector.select(timeout=15)
+                    or self.process.stdout.readline() != b"READY\n"
+                ):
+                    raise RuntimeError(
+                        f"Media server did not start on {self.bind_ip}:{self.port}; check port ownership and storage permissions"
+                    )
+        except BaseException:
+            self.stop()
+            raise
 
     def stop(self) -> None:
-        if self.on_bastion:
-            if self._local_server:
-                self._local_server.shutdown()
-                self._local_server.server_close()
+        if self.process is None:
             return
-
-        if self._reused_existing:
-            return
-
-        if self._bastion_proc is not None:
-            self._bastion_proc.terminate()
-            try:
-                self._bastion_proc.wait(timeout=2)
-            except subprocess.TimeoutExpired:
-                self._bastion_proc.kill()
-            self._bastion_proc = None
-
-        stop_script = self.template_engine.render(
-            "scripts/bastion_http_stop.sh.j2",
-            {"port": self.port},
-        )
-        subprocess.run(
-            ["ssh", self.bastion_ssh_host, "bash -s"],
-            input=stop_script,
-            text=True,
-            check=False,
-            capture_output=True,
-            timeout=1800,
-        )
-
-    @classmethod
-    def sweep_remote(
-        cls,
-        bastion_ssh_host: str,
-        port: int,
-        template_engine: TemplateEngine,
-        remote_dir: Path | str | None = None,
-        force: bool = False,
-    ) -> bool:
-        """Kills any HTTP servers bound to port on the bastion and sweeps the staging directory."""
-        target_dir = str(remote_dir or (Path.home() / "cabrita_serve"))
-        stop_script = template_engine.render(
-            "scripts/bastion_http_stop.sh.j2",
-            {
-                "port": port,
-                "remove_dir": target_dir,
-            },
-        )
-        res = subprocess.run(
-            ["ssh", bastion_ssh_host, "bash -s"],
-            input=stop_script,
-            text=True,
-            check=False,
-            capture_output=True,
-            timeout=1800,
-        )
-        return res.returncode == 0
+        assert self.process.stdin is not None
+        self.process.stdin.close()
+        try:
+            self.process.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            self.process.kill()
+            self.process.wait(timeout=5)
+        assert self.process.stdout is not None
+        self.process.stdout.close()
+        self.process = None

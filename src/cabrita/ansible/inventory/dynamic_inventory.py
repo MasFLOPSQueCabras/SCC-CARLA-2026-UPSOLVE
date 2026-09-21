@@ -2,7 +2,7 @@
 """Ansible Dynamic Inventory for SCC CARLA.
 
 Reads cluster topology, host IPs, roles, and network parameters dynamically from:
-1. CABRITA_CLUSTER_MANIFEST / CABRITA_MANIFEST environment variable
+1. CABRITA_CLUSTER_MANIFEST environment variable
 2. CLI argument --manifest <path>
 3. cluster.yaml in current working directory or repository root
 4. Named cluster config in configs/clusters/${CABRITA_CLUSTER}.yaml
@@ -12,7 +12,6 @@ Reads cluster topology, host IPs, roles, and network parameters dynamically from
 import argparse
 import json
 import os
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -32,9 +31,7 @@ def _locate_manifest_path(explicit_manifest: str | None = None) -> Path | None:
         if p.exists():
             return p.resolve()
 
-    env_manifest = os.environ.get("CABRITA_CLUSTER_MANIFEST") or os.environ.get(
-        "CABRITA_MANIFEST"
-    )
+    env_manifest = os.environ.get("CABRITA_CLUSTER_MANIFEST")
     if env_manifest:
         p = Path(env_manifest)
         if p.exists():
@@ -69,10 +66,6 @@ def _locate_manifest_path(explicit_manifest: str | None = None) -> Path | None:
 
 
 def load_cluster_manifest(manifest_path: Path) -> dict[str, Any]:
-    repo_root = _find_repo_root()
-    core_src = repo_root / "packages" / "cabrita-core" / "src"
-    if core_src.exists() and str(core_src) not in sys.path:
-        sys.path.insert(0, str(core_src))
 
     try:
         from cabrita.core.manifest import load_manifest

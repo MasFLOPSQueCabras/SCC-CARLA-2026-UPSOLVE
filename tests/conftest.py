@@ -1,4 +1,5 @@
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 
@@ -16,6 +17,12 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     )
     group.addoption(
         "--e2e-log-dir", default="test-results/e2e", help="Retained deployment logs"
+    )
+    group.addoption(
+        "--installer-iso", type=Path, help="Local installer ISO for real e2e tests"
+    )
+    group.addoption(
+        "--cloud-image", type=Path, help="Local cloud qcow2 for real e2e tests"
     )
 
 
@@ -42,7 +49,11 @@ def pytest_collection_modifyitems(
 
 @pytest.fixture
 def e2e_log_dir(request: pytest.FixtureRequest) -> Path:
-    path = Path(request.config.getoption("--e2e-log-dir")) / request.node.name
+    path = (
+        Path(request.config.getoption("--e2e-log-dir"))
+        / request.node.name
+        / uuid4().hex[:10]
+    )
     path.mkdir(parents=True, exist_ok=True)
     return path
 

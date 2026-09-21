@@ -1,20 +1,22 @@
 import contextlib
 import importlib.resources as ir
 import subprocess
+import time
+import xml.etree.ElementTree as ET
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
+from ipaddress import ip_network
 from pathlib import Path
 from typing import Any
 
 import libvirt
 
 from cabrita.config import ClusterSettings
-from cabrita.core.manifest.models import ClusterManifest, NodeSpec, VMSpec
-from cabrita.core.oemdrv import generate_oemdrv
+from cabrita.core.manifest.models import ClusterManifest, NodeSpec
 from cabrita.core.providers.base import NodeProvider, PowerState, ProviderPaths
 from cabrita.core.templating import TemplateEngine
 from cabrita.providers.libvirt_backend.cidata import generate_cidata
-from cabrita.providers.libvirt_backend.overlay import create_cow_overlay, is_qcow2_image
+from cabrita.providers.libvirt_backend.overlay import create_cow_overlay
 
 
 class LibvirtProvider(NodeProvider):
@@ -208,240 +210,132 @@ class LibvirtProvider(NodeProvider):
         progress_callback: Callable[[str], None] | None = None,
         **kwargs: Any,
     ) -> bool:
-        te = template_engine or self.template_engine
-        stg = staging_dir or self.paths.staging_dir
-        stg.mkdir(parents=True, exist_ok=True)
-
-        dom_name = self._get_domain_name(node_id)
-        disk_path = self.storage_dir / f"{dom_name}.qcow2"
-
-        self.storage_dir.mkdir(parents=True, exist_ok=True)
-        try:
-            self.storage_dir.chmod(0o777)
-        except OSError:
-            pass
-
+        if image_source is None:
+            raise ValueError("Provisioning requires an explicitly prepared artifact")
+        spec = self._get_node_spec(node_id)
+        if spec is None or spec.vm is None or self.manifest is None:
+            raise ValueError("Provisioning requires a resolved manifest node")
         if self.node_exists(node_id):
             if not kwargs.get("reinstall", False):
                 raise RuntimeError("Existing node requires explicit --reinstall")
             self.teardown_node(node_id)
-
-        spec = self._get_node_spec(node_id)
-        vm_spec = (
-            spec.vm
-            if spec and spec.vm
-            else (self.manifest.defaults.vm if self.manifest else VMSpec())
-        )
-
-        # 1. Resolve source image
-        raw_source = image_source or kwargs.get("image_path") or kwargs.get("iso_path")
-        chosen_img: str | None = str(raw_source) if raw_source else None
-
-        if chosen_img is None:
-            golden_cand = (
-                Path.home()
-                / ".cache"
-                / "cabrita"
-                / "golden"
-                / "golden-rocky-base.qcow2"
+        te = template_engine or self.template_engine
+        stg = staging_dir or self.paths.staging_dir
+        stg.mkdir(parents=True, exist_ok=True)
+        self.storage_dir.mkdir(parents=True, exist_ok=True)
+        name = self._get_domain_name(node_id)
+        disk = self.storage_dir / f"{name}.qcow2"
+        vm = spec.vm
+        cloud = kwargs["bootstrap_method"] == "cloud-init"
+        context = {
+            **self.manifest.template_inputs,
+            **self.manifest.bootstrap.inputs,
+            "network_prefix": ip_network(self.manifest.network.subnet).prefixlen,
+            "hostname": spec.hostname,
+            "node_ip": spec.ip,
+            "gateway_ip": self.manifest.network.gateway,
+            "dns_ip": self.manifest.network.dns,
+            "mac_address": spec.mac,
+            "node_username": self.manifest.defaults.os.username,
+            "pubkey": pubkey,
+        }
+        cidata: Path | None = None
+        if cloud:
+            create_cow_overlay(Path(image_source), disk, size=f"{vm.disk.size_gb}G")
+            user_data, metadata, network = (
+                stg / filename
+                for filename in ("user-data", "meta-data", "network-config")
             )
-            cloud_name = (
-                self.manifest.defaults.os.cloud_image
-                if self.manifest and self.manifest.defaults.os.cloud_image
-                else getattr(
-                    self.settings,
-                    "cloud_image_name",
-                    "Rocky-10-GenericCloud-Base.latest.x86_64.qcow2",
-                )
-            )
-            cloud_cand = self.paths.iso_cache_dir.parent / "images" / cloud_name
-            iso_name = (
-                self.manifest.defaults.os.iso_name
-                if self.manifest and self.manifest.defaults.os.iso_name
-                else getattr(self.settings, "iso_name", "Rocky-10.2-x86_64-minimal.iso")
-            )
-            iso_cand = self.paths.iso_cache_dir / iso_name
-
-            if golden_cand.exists():
-                chosen_img = str(golden_cand)
-            elif cloud_cand.exists():
-                chosen_img = str(cloud_cand)
-            elif iso_cand.exists():
-                chosen_img = str(iso_cand)
-
-        is_boot_iso = bool(chosen_img and not is_qcow2_image(chosen_img))
-        overlay_size = f"{vm_spec.disk.size_gb}G"
-        oemdrv_iso_str: str | None = None
-
-        if not is_boot_iso and chosen_img is not None:
-            # Golden/Cloud QCOW2 Base Image: Instant CoW overlay + Cloud-Init CIDATA
-            if progress_callback:
-                progress_callback("Creating CoW overlay & Cloud-Init drive...")
-
-            create_cow_overlay(
-                base_image=Path(chosen_img),
-                overlay_path=disk_path,
-                size=overlay_size,
-            )
-
-            cidata_target = self.storage_dir / f"{dom_name}_cidata.img"
-            user_data_path = stg / f"user_data_{dom_name}"
-            meta_data_path = stg / f"meta_data_{dom_name}"
-            network_config_path = stg / f"network_config_{dom_name}"
-
-            mac_address = spec.mac if spec else f"52:54:00:72:01:0{node_id}"
-            username = (
-                self.manifest.defaults.os.username
-                if self.manifest
-                else (self.settings.node_username if self.settings else "scct-2672")
-            )
-            hostname = (
-                spec.hostname
-                if spec
-                else (
-                    self.settings.get_hostname(node_id)
-                    if self.settings
-                    else f"node{node_id}"
-                )
-            )
-
-            ci_context = {
-                "hostname": hostname,
-                "node_ip": self.get_node_ip(node_id),
-                "gateway_ip": self.paths.gateway_ip,
-                "dns_ip": self.paths.dns_ip,
-                "mac_address": mac_address,
-                "node_username": username,
-                "pubkey": pubkey,
-            }
-            te.render_to_file("user-data.j2", ci_context, user_data_path)
-            te.render_to_file("meta-data.j2", ci_context, meta_data_path)
-            te.render_to_file("network-config.j2", ci_context, network_config_path)
-
-            generate_cidata(
-                user_data_path=user_data_path,
-                meta_data_path=meta_data_path,
-                network_config_path=network_config_path,
-                output_path=cidata_target,
-                template_engine=te,
-            )
-            cidata_iso_path = cidata_target
-            install_iso_str = None
+            for filename, destination, override in (
+                ("user-data.j2", user_data, kwargs.get("user_data")),
+                ("meta-data.j2", metadata, None),
+                ("network-config.j2", network, kwargs.get("network_config")),
+            ):
+                if override is None:
+                    te.render_to_file(filename, context, destination)
+                else:
+                    destination.write_text(
+                        te.render_string(Path(override).read_text(), context)
+                    )
+            cidata = self.storage_dir / f"{name}_cidata.iso"
+            generate_cidata(user_data, metadata, network, cidata)
         else:
-            # Minimal Bootable ISO Installer with Kickstart OEMDRV
-            if progress_callback:
-                progress_callback(
-                    "Allocating blank target drive for ISO kickstart install..."
-                )
-
             subprocess.run(
-                ["qemu-img", "create", "-f", "qcow2", str(disk_path), overlay_size],
+                ["qemu-img", "create", "-f", "qcow2", str(disk), f"{vm.disk.size_gb}G"],
                 check=True,
                 capture_output=True,
-                timeout=1800,
+                timeout=120,
             )
-            cidata_iso_path = None
-
-            oemdrv_cand = kwargs.get("oemdrv_path")
-            if oemdrv_cand:
-                oemdrv_iso_str = str(Path(oemdrv_cand).resolve())
-            else:
-                ks_cfg_path = kwargs.get("ks_cfg_path")
-                if not ks_cfg_path:
-                    ks_cfg_path = stg / f"ks_node{node_id}.cfg"
-                    username = (
-                        self.manifest.defaults.os.username
-                        if self.manifest
-                        else (
-                            self.settings.node_username
-                            if self.settings
-                            else "scct-2672"
-                        )
-                    )
-                    hostname = (
-                        spec.hostname
-                        if spec
-                        else (
-                            self.settings.get_hostname(node_id)
-                            if self.settings
-                            else f"node{node_id}"
-                        )
-                    )
-                    context = {
-                        "node_ip": self.get_node_ip(node_id),
-                        "gateway_ip": self.paths.gateway_ip,
-                        "dns_ip": self.paths.dns_ip,
-                        "hostname": hostname,
-                        "node_username": username,
-                        "pubkey": pubkey,
-                        "target_disk": "vda",
-                    }
-                    te.render_to_file("ks.cfg.j2", context, ks_cfg_path)
-
-                if Path(ks_cfg_path).exists():
-                    oemdrv_target = self.storage_dir / f"{dom_name}_oemdrv.img"
-                    try:
-                        generate_oemdrv(
-                            Path(ks_cfg_path),
-                            oemdrv_target,
-                            template_engine=te,
-                        )
-                        oemdrv_iso_str = str(oemdrv_target.resolve())
-                    except subprocess.CalledProcessError, OSError:
-                        oemdrv_iso_str = None
-
-            install_iso_str = str(Path(chosen_img).resolve()) if chosen_img else None
-
-        mac_address = spec.mac if spec else f"52:54:00:72:01:0{node_id}"
-        net_bridge = (
-            self.manifest.network.bridge
-            if self.manifest and self.manifest.network.bridge != "virbr0"
-            else None
-        )
-
+        network_spec = self.manifest.network
         domain_context = {
-            "domain_name": dom_name,
-            "memory_mb": vm_spec.memory_mb,
-            "vcpus": vm_spec.vcpus,
-            "iothreads": vm_spec.iothreads,
-            "cpu_mode": vm_spec.cpu_mode,
-            "machine_type": vm_spec.machine_type,
-            "firmware": vm_spec.firmware,
-            "disk_controller": vm_spec.disk.controller,
-            "controller_queues": vm_spec.disk.queues,
-            "disk_cache": vm_spec.disk.cache,
-            "disk_io": vm_spec.disk.io,
-            "disk_discard": vm_spec.disk.discard,
-            "disk_image": str(disk_path.resolve()),
-            "disk_target": "sda" if vm_spec.disk.bus == "scsi" else "vda",
-            "disk_bus": vm_spec.disk.bus,
-            "cidata_iso": str(cidata_iso_path.resolve()) if cidata_iso_path else None,
-            "install_iso": install_iso_str,
-            "oemdrv_iso": oemdrv_iso_str,
-            "boot_dev": "cdrom" if is_boot_iso else "hd",
-            "network_bridge": net_bridge,
-            "network_name": self.manifest.network.network_name
-            if self.manifest
-            else "default",
-            "mac_address": mac_address,
-            "nic_model": self.manifest.network.model if self.manifest else "virtio",
-            "vhost": self.manifest.network.vhost if self.manifest else True,
-            "nic_queues": self.manifest.network.queues if self.manifest else 2,
-            "graphics": vm_spec.graphics,
+            "domain_name": name,
+            "memory_mb": vm.memory_mb,
+            "vcpus": vm.vcpus,
+            "iothreads": vm.iothreads,
+            "topology": None,
+            "cpu_mode": vm.cpu_mode,
+            "machine_type": vm.machine_type,
+            "firmware": vm.firmware,
+            "disk_controller": vm.disk.controller,
+            "controller_queues": vm.disk.queues,
+            "disk_cache": vm.disk.cache,
+            "disk_io": vm.disk.io,
+            "disk_discard": vm.disk.discard,
+            "disk_image": str(disk),
+            "disk_target": "vda" if vm.disk.bus == "virtio" else "sda",
+            "disk_bus": vm.disk.bus,
+            "cidata_iso": str(cidata) if cidata else None,
+            "install_iso": None if cloud else image_source,
+            "oemdrv_iso": kwargs.get("oemdrv_path"),
+            "boot_dev": "hd" if cloud else "cdrom",
+            "network_bridge": network_spec.bridge
+            if network_spec.bridge != "virbr0"
+            else None,
+            "network_name": network_spec.network_name,
+            "mac_address": spec.mac,
+            "nic_model": network_spec.model,
+            "vhost": network_spec.vhost,
+            "nic_queues": network_spec.queues,
+            "graphics": vm.graphics,
         }
-
-        if progress_callback:
-            progress_callback("Defining and starting VM domain in QEMU/KVM...")
-
-        domain_xml = te.render("domain.xml.j2", domain_context)
-        dom = self.conn.defineXML(domain_xml)
-        if dom is None:
-            return False
-        dom.create()
+        xml = te.render("domain.xml.j2", domain_context)
+        (stg / "domain.xml").write_text(xml)
+        domain = self.conn.defineXML(xml)
+        if domain is None:
+            raise RuntimeError(f"Failed to define domain {name}")
+        domain.create()
         return True
 
     def post_provision(self, node_id: int) -> None:
-        pass
+        """Remove installation media from the persistent domain and boot its disk."""
+        domain = self._get_domain(node_id)
+        if domain is None:
+            raise RuntimeError(f"Domain disappeared during installation: {node_id}")
+        if domain.isActive():
+            domain.shutdown()
+            deadline = time.monotonic() + 120
+            while domain.isActive():
+                if time.monotonic() >= deadline:
+                    raise TimeoutError(
+                        "Guest did not shut down for installation media removal"
+                    )
+                time.sleep(1)
+        xml = ET.fromstring(domain.XMLDesc(0))
+        devices = xml.find("devices")
+        assert devices is not None
+        for disk in devices.findall("disk"):
+            target = disk.find("target")
+            if disk.get("device") == "cdrom" or (
+                target is not None and target.get("bus") == "usb"
+            ):
+                devices.remove(disk)
+        os_element = xml.find("os")
+        assert os_element is not None
+        for boot in os_element.findall("boot"):
+            os_element.remove(boot)
+        ET.SubElement(os_element, "boot", {"dev": "hd"})
+        self.conn.defineXML(ET.tostring(xml, encoding="unicode"))
+        domain.create()
 
     def teardown_node(self, node_id: int) -> bool:
         dom = self._get_domain(node_id)
@@ -454,7 +348,7 @@ class LibvirtProvider(NodeProvider):
                 | libvirt.VIR_DOMAIN_UNDEFINE_NVRAM
             )
         name = self._get_domain_name(node_id)
-        for suffix in (".qcow2", "_cidata.img", "_oemdrv.img"):
+        for suffix in (".qcow2", "_cidata.iso", "_oemdrv.img"):
             (self.storage_dir / f"{name}{suffix}").unlink(missing_ok=True)
         return True
 

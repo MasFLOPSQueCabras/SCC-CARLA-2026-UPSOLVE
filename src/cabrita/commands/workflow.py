@@ -13,6 +13,7 @@ from typing import Annotated
 import typer
 import yaml
 
+from cabrita.bootstrap.artifacts import ArtifactCache
 from cabrita.config import ClusterSettings
 from cabrita.core.lifecycle.remote_locks import BastionLocks
 from cabrita.core.lifecycle.service import (
@@ -51,22 +52,24 @@ def service_context(path: Path) -> Iterator[LifecycleService[ProviderBackend]]:
         gateway_ip=manifest.network.gateway,
         dns_ip=manifest.network.dns,
     )
-    state = StateStore(cluster.state_directory(get_state_dir()))
+    state_root, cache_root = get_state_dir(), get_cache_dir()
+    state = StateStore(cluster.state_directory(state_root))
     with get_provider(settings) as provider:
         backend = ProviderBackend(
             cluster,
             provider,
             state,
-            get_cache_dir() / "clusters" / cluster.identity,
+            cache_root / "clusters" / cluster.identity,
             manifest.access.public_key,
             manifest.access.private_key,
             manifest.access.timeout,
+            ArtifactCache(cache_root / "artifacts"),
         )
         yield LifecycleService(
             cluster,
             backend,
             state,
-            ResourceLocks(get_state_dir() / "locks")
+            ResourceLocks(state_root / "locks")
             if manifest.provider == "libvirt"
             else BastionLocks(manifest.bastion.ssh_host),
             max_workers=manifest.access.max_workers,
@@ -155,7 +158,9 @@ def doctor(
         resolved = ResolvedCluster.load(cluster)
         required = ["ssh", "ansible-playbook"]
         if resolved.manifest.provider == "libvirt":
-            required.extend(["qemu-img", "virsh", "mkfs.vfat", "mcopy"])
+            required.extend(["qemu-img", "virsh", "xorriso"])
+        if resolved.manifest.bootstrap.method == "oemdrv":
+            required.extend(["mkfs.vfat", "mcopy"])
         problems = [
             f"Missing executable: {tool}"
             for tool in required

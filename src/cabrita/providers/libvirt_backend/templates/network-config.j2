@@ -9,7 +9,7 @@ ethernets:
       name: "e*"
     {% endif %}
     addresses:
-      - {{ node_ip }}/24
+      - {{ node_ip }}/{{ network_prefix }}
     routes:
       - to: 0.0.0.0/0
         via: {{ gateway_ip }}

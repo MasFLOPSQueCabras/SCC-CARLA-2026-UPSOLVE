@@ -1,7 +1,7 @@
 #version=RHEL10
-# Non-interactive text/cmdline installation and automatic reboot upon completion
+# Non-interactive text/cmdline installation and shutdown for media removal upon completion
 cmdline
-reboot
+poweroff
 
 # Installation source directly from the mounted minimal ISO
 cdrom
@@ -12,7 +12,7 @@ keyboard us
 timezone America/Argentina/Cordoba --utc
 
 # Network configuration
-network --bootproto=static --ip={{ node_ip }} --netmask=255.255.255.0 --gateway={{ gateway_ip }} --nameserver={{ dns_ip }} --device=link --activate --onboot=yes --hostname={{ hostname }}
+network --bootproto=static --ip={{ node_ip }} --netmask={{ netmask }} --gateway={{ gateway_ip }} --nameserver={{ dns_ip }} --device=link --activate --onboot=yes --hostname={{ hostname }}
 
 # Storage configuration
 bootloader --location=mbr

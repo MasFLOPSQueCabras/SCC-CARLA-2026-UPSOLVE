@@ -42,6 +42,7 @@ class PlannedNode:
 
 
 class LifecycleBackend(Protocol):
+    def installation_session(self) -> AbstractContextManager[None]: ...
     def observe(self, node: NodeSpec) -> Observation: ...
     def deploy(self, node: NodeSpec, *, reinstall: bool) -> None: ...
     def start(self, node: NodeSpec) -> None: ...
@@ -211,7 +212,17 @@ class LifecycleService[BackendT: LifecycleBackend]:
     ) -> tuple[PlannedNode, ...]:
         nodes = self.cluster.nodes(targets)
         keys = [self.cluster.lock_key(node, self.libvirt_uri) for node in nodes]
-        with self.locks.acquire(keys):
+        if self.cluster.manifest.provider in ("helvetios", "bmc") and operation in (
+            "up",
+            "deploy",
+        ):
+            bastion = self.cluster.manifest.bastion
+            keys.append(
+                hashlib.sha256(
+                    f"http://{bastion.http_bind_ip}:{bastion.http_port}".encode()
+                ).hexdigest()
+            )
+        with self.locks.acquire(keys), ExitStack() as stack:
             plan = self.plan(
                 operation, [node.id for node in nodes], reinstall=reinstall
             )
@@ -224,6 +235,8 @@ class LifecycleService[BackendT: LifecycleBackend]:
                 raise RuntimeError(
                     f"Cannot execute: {[(entry.id, entry.action) for entry in blocked]}; inspect state or explicitly use --reinstall"
                 )
+            if any(entry.action in ("deploy", "reinstall", "resume") for entry in plan):
+                stack.enter_context(self.backend.installation_session())
             actions = {entry.id: entry.action for entry in plan}
 
             def apply(node: NodeSpec) -> None:

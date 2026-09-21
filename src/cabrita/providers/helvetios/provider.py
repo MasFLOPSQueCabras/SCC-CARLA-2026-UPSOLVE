@@ -1,6 +1,5 @@
 import importlib.resources as ir
 import logging
-import subprocess
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from pathlib import Path
@@ -10,10 +9,8 @@ logger = logging.getLogger(__name__)
 
 from cabrita.config import ClusterSettings
 from cabrita.core.manifest.models import ClusterManifest, NodeSpec
-from cabrita.core.oemdrv import generate_oemdrv
 from cabrita.core.providers.base import NodeProvider, PowerState, ProviderPaths
 from cabrita.core.templating import TemplateEngine
-from cabrita.providers.helvetios.bios import BiosProfile, get_profile_attributes
 from cabrita.providers.helvetios.bmc_client import BMCController
 from cabrita.providers.helvetios.media_server import (
     EphemeralRangeHTTPServer,
@@ -82,7 +79,7 @@ class HelvetiosProvider(NodeProvider):
             state_db_path=state_db,
             gateway_ip=gateway,
             dns_ip=dns,
-            remote_serve_dir=str(Path(remote_serve).expanduser()),
+            remote_serve_dir=remote_serve,
             bastion_ssh_host=None if on_bastion else self.bastion_ssh_host,
         )
 
@@ -162,82 +159,14 @@ class HelvetiosProvider(NodeProvider):
     def set_bios_settings(self, node_id: int, attributes: dict[str, Any]) -> bool:
         return self.bmc.set_bios_settings(node_id, attributes)
 
-    def _ensure_bastion_iso(
-        self,
-        template_engine: TemplateEngine,
-        iso_source: str | None = None,
-    ) -> None:
-        """Ensures the Rocky Linux minimal ISO is available on the Bastion HTTP serve directory."""
-        serve_path = (
-            Path(self.paths.remote_serve_dir)
-            if self.paths.remote_serve_dir
-            else (Path.home() / "cabrita_serve")
-        )
-        on_bastion = is_running_on_bastion(self.bastion_hostname)
-        iso_name = "Rocky-10.2-x86_64-minimal.iso"
-        if (
-            self.manifest
-            and self.manifest.defaults
-            and self.manifest.defaults.os.iso_name
-        ):
-            iso_name = self.manifest.defaults.os.iso_name
-        elif self.settings and hasattr(self.settings, "iso_name"):
-            iso_name = self.settings.iso_name
-
-        if on_bastion:
-            dest_iso_path = serve_path / iso_name
-            if not dest_iso_path.exists():
-                dest_iso_path.parent.mkdir(parents=True, exist_ok=True)
-                cached = self.paths.iso_cache_dir / iso_name
-                if cached.exists():
-                    subprocess.run(
-                        ["cp", str(cached), str(dest_iso_path)],
-                        check=True,
-                        timeout=1800,
-                    )
-            return
-
-        check_script = template_engine.render(
-            "scripts/bastion_check_iso.sh.j2",
-            {"serve_dir": str(serve_path), "iso_name": iso_name},
-        )
-        try:
-            res = subprocess.run(
-                ["ssh", self.bastion_ssh_host, "bash -s"],
-                input=check_script,
-                capture_output=True,
-                text=True,
-                check=True,
-                timeout=1800,
-            )
-            status = res.stdout.strip()
-        except subprocess.CalledProcessError, OSError:
-            status = "UNKNOWN"
-
-        if status == "MISSING":
-            cached = self.paths.iso_cache_dir / iso_name
-            if cached.exists():
-                subprocess.run(
-                    [
-                        "scp",
-                        str(cached),
-                        f"{self.bastion_ssh_host}:{serve_path}/{iso_name}",
-                    ],
-                    check=True,
-                    timeout=1800,
-                )
-
     @contextmanager
     def deployment_session(self) -> Generator[None]:
         """Runs the ephemeral Range HTTP server for HPE iLO virtual media boot."""
-        te = self.template_engine or TemplateEngine()
-        self._ensure_bastion_iso(template_engine=te)
         server = EphemeralRangeHTTPServer(
             port=self.http_port,
             bind_ip=self.http_ip,
             bastion_ssh_host=self.bastion_ssh_host,
             bastion_hostname=self.bastion_hostname,
-            template_engine=te,
             remote_serve_dir=self.paths.remote_serve_dir,
         )
         with server:
@@ -254,120 +183,25 @@ class HelvetiosProvider(NodeProvider):
         progress_callback: Callable[[str], None] | None = None,
         **kwargs: Any,
     ) -> bool:
-        te = template_engine or self.template_engine
-        stg = staging_dir or self.paths.staging_dir
-        stg.mkdir(parents=True, exist_ok=True)
-
-        spec = self._get_node_spec(node_id)
-        hostname = (
-            spec.hostname
-            if spec
-            else (
-                self.settings.get_hostname(node_id)
-                if self.settings
-                else f"node{node_id}"
+        if image_source is None or not image_source.startswith(("http://", "https://")):
+            raise ValueError(
+                "Helvetios requires explicitly prepared HTTP installation media"
             )
+        return self.bmc.mount_and_boot(
+            node_id, iso_url=image_source, floppy_url=kwargs.get("oemdrv_path")
         )
-        node_ip = self.get_node_ip(node_id)
-
-        # 1. Staging Kickstart
-        if progress_callback:
-            progress_callback("Staging Kickstart configuration...")
-        ks_cfg_path = stg / f"ks_node{node_id}.cfg"
-        username = (
-            self.manifest.defaults.os.username
-            if (self.manifest and self.manifest.defaults)
-            else (self.settings.node_username if self.settings else "scct-2672")
-        )
-        target_disk = None
-        if self.manifest and self.manifest.defaults and self.manifest.defaults.hardware:
-            target_disk = self.manifest.defaults.hardware.target_disk
-
-        context = {
-            "node_ip": node_ip,
-            "gateway_ip": self.paths.gateway_ip,
-            "dns_ip": self.paths.dns_ip,
-            "hostname": hostname,
-            "node_username": username,
-            "pubkey": pubkey,
-            "target_disk": target_disk,
-        }
-        te.render_to_file("kickstart/ks.cfg.j2", context, ks_cfg_path)
-
-        # 2. Generate OEMDRV FAT image
-        if progress_callback:
-            progress_callback("Generating OEMDRV FAT boot volume...")
-        oemdrv_name = f"oemdrv_node{node_id}.img"
-        oemdrv_path = stg / oemdrv_name
-        generate_oemdrv(ks_cfg_path, oemdrv_path, template_engine=te)
-
-        # 3. Synchronize OEMDRV to Bastion HTTP serving directory
-        serve_path = (
-            Path(self.paths.remote_serve_dir)
-            if self.paths.remote_serve_dir
-            else (Path.home() / "cabrita_serve")
-        )
-        on_bastion = is_running_on_bastion(self.bastion_hostname)
-        if on_bastion:
-            dest_path = serve_path / oemdrv_name
-            dest_path.parent.mkdir(parents=True, exist_ok=True)
-            dest_path.write_bytes(oemdrv_path.read_bytes())
-        else:
-            subprocess.run(
-                [
-                    "scp",
-                    "-q",
-                    str(oemdrv_path),
-                    f"{self.bastion_ssh_host}:{serve_path}/{oemdrv_name}",
-                ],
-                check=True,
-                timeout=1800,
-            )
-
-        # 4. Set BIOS profile
-        if progress_callback:
-            progress_callback(f"Configuring BIOS '{bios_profile}' profile...")
-        try:
-            profile_enum = BiosProfile(bios_profile.lower())
-            bios_attrs = get_profile_attributes(profile_enum)
-            self.set_bios_settings(node_id, bios_attrs)
-        except (ValueError, KeyError, AttributeError, RuntimeError) as exc:
-            logger.debug(
-                "Could not apply BIOS profile '%s' on node %s: %s",
-                bios_profile,
-                node_id,
-                exc,
-            )
-
-        # 5. Mount Virtual Media & trigger boot
-        if progress_callback:
-            progress_callback("Mounting Virtual Media & triggering boot...")
-        iso_name = "Rocky-10.2-x86_64-minimal.iso"
-        if (
-            self.manifest
-            and self.manifest.defaults
-            and self.manifest.defaults.os.iso_name
-        ):
-            iso_name = self.manifest.defaults.os.iso_name
-        elif self.settings and hasattr(self.settings, "iso_name"):
-            iso_name = self.settings.iso_name
-
-        iso_url = f"http://{self.http_ip}:{self.http_port}/{iso_name}"
-        oemdrv_url = f"http://{self.http_ip}:{self.http_port}/{oemdrv_name}"
-
-        return self.bmc.mount_and_boot(node_id, iso_url=iso_url, floppy_url=oemdrv_url)
 
     def post_provision(self, node_id: int) -> None:
         """Ejects virtual media once OS installation is complete and SSH is responsive."""
-        self.bmc.eject_virtual_media(node_id)
+        if not self.bmc.eject_virtual_media(node_id):
+            raise RuntimeError(f"Failed to detach media on node {node_id}")
+        if not self.bmc.power_on(node_id):
+            raise RuntimeError(f"Failed to boot disk on node {node_id}")
 
     def teardown_node(self, node_id: int) -> bool:
-        self.bmc.eject_virtual_media(node_id)
+        if not self.bmc.eject_virtual_media(node_id):
+            raise RuntimeError(f"Failed to detach media on node {node_id}")
         return self.bmc.power_off(node_id, graceful=False)
 
     def close(self) -> None:
         self.bmc.close()
-
-
-# Backward compatibility alias
-HelvetiosBMCProvider = HelvetiosProvider

@@ -166,7 +166,7 @@ flowchart LR
 ### 1. Disk Target Naming
 * **Libvirt**: Default primary disk is `/dev/vda`.
 * **Helvetios**: Physical drive is `/dev/sda` or `/dev/nvme0n1`.
-* **Mechanism**: The manifest file (`values.yaml`) defines `target_disk` explicitly, which is dynamically rendered into the kickstart template `ks.cfg.j2`.
+* **Mechanism**: The manifest file (`cluster.yaml`) defines `target_disk` explicitly, which is dynamically rendered into the kickstart template `ks.cfg.j2`.
 
 ### 2. Network Interface Names
 * **Libvirt**: Interface is typically `eth0` or `enp1s0`.
@@ -195,7 +195,7 @@ To validate your entire cluster software stack before touching Helvetios:
 ```bash
 cabrita init --provider vm
 ```
-Review and edit `values.yaml` if needed (e.g. adjust RAM or vCPUs).
+Review and edit `cluster.yaml` if needed (e.g. adjust RAM or vCPUs).
 
 ### Step 2: Provision the Local Virtual Cluster
 ```bash

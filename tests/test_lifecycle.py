@@ -1,3 +1,4 @@
+from contextlib import nullcontext
 from pathlib import Path
 
 import pytest
@@ -18,6 +19,9 @@ class Backend:
         self.deployed: list[int] = []
         self.configured = 0
         self.fail: set[int] = set()
+
+    def installation_session(self):
+        return nullcontext()
 
     def observe(self, node):
         return self.nodes.get(node.id, Observation(False, False, False))

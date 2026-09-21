@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from cabrita.bootstrap.artifacts import ArtifactCache
 from cabrita.config import ClusterSettings
 from cabrita.core.lifecycle.service import (
     Checkpoint,
@@ -57,6 +58,7 @@ nodes:
                 tmp_path / "key.pub",
                 tmp_path / "key",
                 10,
+                ArtifactCache(tmp_path / "artifacts"),
             )
             service = LifecycleService(
                 cluster, backend, state, ResourceLocks(tmp_path / "locks")

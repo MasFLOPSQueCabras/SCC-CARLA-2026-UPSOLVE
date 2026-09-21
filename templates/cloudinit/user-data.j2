@@ -1,11 +1,11 @@
 #cloud-config
 users:
   - name: {{ node_username }}
-    gecos: SCC Node User
+    gecos: Cabrita Node User
     groups: [wheel]
     sudo: ALL=(ALL) NOPASSWD:ALL
     shell: /bin/bash
-    lock_passwd: false
+    lock_passwd: true
     ssh_authorized_keys:
       - {{ pubkey }}
 

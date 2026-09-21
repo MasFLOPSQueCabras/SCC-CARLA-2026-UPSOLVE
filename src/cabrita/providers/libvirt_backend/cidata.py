@@ -1,7 +1,7 @@
+"""Build cloud-init seed media suitable for a virtual optical drive."""
+
 import subprocess
 from pathlib import Path
-
-from cabrita.core.templating import TemplateEngine
 
 
 def generate_cidata(
@@ -9,28 +9,30 @@ def generate_cidata(
     meta_data_path: Path,
     network_config_path: Path,
     output_path: Path,
-    template_engine: TemplateEngine,
-    size_mb: int = 4,
 ) -> Path:
-    """Generates a CIDATA FAT image containing cloud-init configs using a templated bash script."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    script_path = output_path.parent / f"make_{output_path.stem}.sh"
-
-    context = {
-        "output_img": str(output_path.resolve()),
-        "user_data_path": str(user_data_path.resolve()),
-        "meta_data_path": str(meta_data_path.resolve()),
-        "network_config_path": str(network_config_path.resolve()),
-        "size_mb": size_mb,
-    }
-    template_engine.render_to_file(
-        "scripts/generate_cidata.sh.j2", context, script_path
+    temporary = output_path.with_suffix(".partial.iso")
+    subprocess.run(
+        [
+            "xorriso",
+            "-as",
+            "mkisofs",
+            "-quiet",
+            "-V",
+            "CIDATA",
+            "-J",
+            "-r",
+            "-o",
+            str(temporary),
+            "-graft-points",
+            f"user-data={user_data_path}",
+            f"meta-data={meta_data_path}",
+            f"network-config={network_config_path}",
+        ],
+        check=True,
+        capture_output=True,
+        timeout=120,
     )
-    script_path.chmod(0o755)
-
-    subprocess.run(["bash", str(script_path)], check=True, timeout=1800)
-    try:
-        output_path.chmod(0o666)
-    except OSError:
-        pass
+    temporary.chmod(0o644)
+    temporary.replace(output_path)
     return output_path

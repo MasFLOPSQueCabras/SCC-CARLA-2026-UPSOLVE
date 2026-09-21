@@ -359,31 +359,39 @@ class BMCController:
         try:
             with self.get_client(node_id) as client:
                 for slot in ("2", "1"):
-                    client.post(
-                        f"/redfish/v1/Managers/1/VirtualMedia/{slot}/Actions/VirtualMedia.EjectMedia/"
-                    )
+                    path = f"/redfish/v1/Managers/1/VirtualMedia/{slot}/"
+                    status = client.get(path)
+                    status.raise_for_status()
+                    if status.json().get("Inserted", False):
+                        client.post(
+                            path + "Actions/VirtualMedia.EjectMedia/"
+                        ).raise_for_status()
                 return True
         except httpx2.HTTPError, OSError:
             return False
 
-    def mount_and_boot(self, node_id: int, iso_url: str, floppy_url: str = "") -> bool:
+    def mount_and_boot(
+        self, node_id: int, iso_url: str, floppy_url: str | None = None
+    ) -> bool:
         try:
             with self.get_client(node_id) as client:
-                self.power_off(node_id, graceful=False)
+                if not self.power_off(node_id, graceful=False):
+                    return False
                 time.sleep(1.0)
-                self.eject_virtual_media(node_id)
+                if not self.eject_virtual_media(node_id):
+                    return False
 
                 # Mount CD / ISO in slot 2
                 client.post(
                     "/redfish/v1/Managers/1/VirtualMedia/2/Actions/VirtualMedia.InsertMedia/",
                     {"Image": iso_url},
-                )
+                ).raise_for_status()
                 # Mount Floppy in slot 1 if provided
                 if floppy_url:
                     client.post(
                         "/redfish/v1/Managers/1/VirtualMedia/1/Actions/VirtualMedia.InsertMedia/",
                         {"Image": floppy_url},
-                    )
+                    ).raise_for_status()
 
                 # Set one-time boot to CD
                 client.patch(
@@ -394,9 +402,8 @@ class BMCController:
                             "BootSourceOverrideEnabled": "Once",
                         }
                     },
-                )
-                self.power_on(node_id)
-                return True
+                ).raise_for_status()
+                return self.power_on(node_id)
         except (httpx2.HTTPError, OSError) as err:
             logger.error("Failed virtual media mount on Node %s: %s", node_id, err)
             return False

@@ -3,9 +3,13 @@
 import json
 import subprocess
 import time
+from contextlib import AbstractContextManager
 from importlib.resources import files
 from pathlib import Path
 
+from cabrita.bootstrap.artifacts import ArtifactCache
+from cabrita.bootstrap.media import prepare_media
+from cabrita.bootstrap.remote import BastionMedia
 from cabrita.core.bootstrap import BootstrapMethod, CustomPreparer
 from cabrita.core.lifecycle.service import Observation, StateStore
 from cabrita.core.manifest import NodeSpec
@@ -25,6 +29,7 @@ class ProviderBackend:
         public_key: Path,
         private_key: Path,
         timeout: int,
+        artifact_cache: ArtifactCache,
     ) -> None:
         self.cluster = cluster
         self.provider = provider
@@ -33,6 +38,7 @@ class ProviderBackend:
         self.public_key = public_key
         self.private_key = private_key
         self.timeout = timeout
+        self.artifact_cache = artifact_cache
         template_paths = [
             Path(str(files("cabrita.providers.libvirt_backend").joinpath("templates"))),
             Path(str(files("cabrita.providers.helvetios").joinpath("templates"))),
@@ -40,6 +46,9 @@ class ProviderBackend:
         if cluster.manifest.bootstrap.templates:
             template_paths.insert(0, cluster.manifest.bootstrap.templates)
         self.templates = TemplateEngine(template_paths)
+
+    def installation_session(self) -> AbstractContextManager[None]:
+        return self.provider.deployment_session()
 
     def _reachable(self, node: NodeSpec) -> bool:
         return is_ssh_authenticated(
@@ -64,6 +73,21 @@ class ProviderBackend:
         bootstrap = self.cluster.manifest.bootstrap
         node_dir = self.work_dir / f"node-{node.id}"
         node_dir.mkdir(parents=True, exist_ok=True)
+        if (
+            self.provider.name == "helvetios"
+            and bootstrap.method != BootstrapMethod.CUSTOM
+        ):
+            source, auxiliary = BastionMedia(self.cluster, self.templates).prepare(
+                node, self.public_key.read_text().strip(), node_dir, self.artifact_cache
+            )
+            if not self.provider.provision_node(
+                node.id,
+                self.public_key.read_text().strip(),
+                image_source=source,
+                oemdrv_path=auxiliary,
+            ):
+                raise RuntimeError(f"Provisioning failed for {node.hostname}")
+            return
         match bootstrap.method:
             case BootstrapMethod.CUSTOM:
                 assert bootstrap.prepare is not None
@@ -78,30 +102,41 @@ class ProviderBackend:
                     remote_dir=f"/tmp/cabrita-{self.cluster.identity}-node-{node.id}",
                 )
                 source = str(result.path)
-            case BootstrapMethod.CLOUD_INIT | BootstrapMethod.OEMDRV:
-                assert bootstrap.artifact is not None
-                artifact = self.cluster.manifest.artifacts[bootstrap.artifact]
-                source = artifact.source
-                if source.startswith(("http:", "https:")):
-                    raise ValueError(
-                        "Artifact must be prepared locally before deployment"
-                    )
-                artifact.verify(Path(source))
+            case (
+                BootstrapMethod.CLOUD_INIT
+                | BootstrapMethod.OEMDRV
+                | BootstrapMethod.EMBEDDED_KICKSTART
+            ):
+                media = prepare_media(
+                    self.cluster,
+                    node,
+                    self.artifact_cache,
+                    self.templates,
+                    self.public_key.read_text().strip(),
+                    node_dir,
+                )
+                source = str(media.source)
             case _:
                 raise NotImplementedError(
                     f"Media preparation for {bootstrap.method} is not implemented yet"
                 )
-        with self.provider.deployment_session():
-            succeeded = self.provider.provision_node(
-                node.id,
-                self.public_key.read_text().strip(),
-                image_source=source,
-                template_engine=self.templates,
-                staging_dir=node_dir,
-                reinstall=reinstall,
-                bootstrap_method=bootstrap.method.value,
-                ks_cfg_path=bootstrap.kickstart,
-            )
+        auxiliary = (
+            str(media.auxiliary)
+            if bootstrap.method != BootstrapMethod.CUSTOM and media.auxiliary
+            else None
+        )
+        succeeded = self.provider.provision_node(
+            node.id,
+            self.public_key.read_text().strip(),
+            image_source=source,
+            template_engine=self.templates,
+            staging_dir=node_dir,
+            reinstall=reinstall,
+            bootstrap_method=bootstrap.method.value,
+            oemdrv_path=auxiliary,
+            user_data=bootstrap.user_data,
+            network_config=bootstrap.network_config,
+        )
         if not succeeded:
             raise RuntimeError(f"Provisioning failed for {node.hostname}")
 
@@ -111,9 +146,46 @@ class ProviderBackend:
 
     def verify(self, node: NodeSpec) -> None:
         deadline = time.monotonic() + self.timeout
+        installation = self.state.read(node.id).phase == "installing"
+        finalized = not installation
         while time.monotonic() < deadline:
-            if self._reachable(node):
+            reachable = self._reachable(node)
+            if not finalized and (
+                reachable or self.provider.get_power_status(node.id) == PowerState.OFF
+            ):
+                if (
+                    reachable
+                    and self.cluster.manifest.bootstrap.method
+                    == BootstrapMethod.CLOUD_INIT
+                ):
+                    command = [
+                        "ssh",
+                        "-o",
+                        "BatchMode=yes",
+                        "-o",
+                        "StrictHostKeyChecking=no",
+                        "-o",
+                        "UserKnownHostsFile=/dev/null",
+                        "-o",
+                        "ConnectTimeout=10",
+                        "-i",
+                        str(self.private_key),
+                        f"{self.cluster.manifest.defaults.os.username}@{node.ip}",
+                        "sudo cloud-init status --wait --long",
+                    ]
+                    with (self.work_dir / f"node-{node.id}" / "cloud-init.log").open(
+                        "w"
+                    ) as log:
+                        subprocess.run(
+                            command,
+                            check=True,
+                            stdout=log,
+                            stderr=subprocess.STDOUT,
+                            timeout=max(1, deadline - time.monotonic()),
+                        )
                 self.provider.post_provision(node.id)
+                finalized = True
+            elif reachable:
                 return
             time.sleep(min(2, max(0, deadline - time.monotonic())))
         raise TimeoutError(f"SSH verification timed out for {node.hostname}")

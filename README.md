@@ -39,7 +39,7 @@ The CLI supports declarative cluster authoring for both local virtualized enviro
 Ensure dependencies and workspace packages are installed using `uv`:
 
 ```bash
-uv sync --all-packages
+uv sync --all-extras
 uv run cabrita --help
 ```
 
@@ -55,15 +55,11 @@ uv run cabrita --help
 
 When commands are run without explicit parameters, `cabrita` applies the following deterministic defaults:
 
-- **Cluster Manifest Resolution (`cabrita plan`, `cabrita cluster validate`)**: Searches in order:
-  1. `./values.yaml` in the current working directory.
-  2. `values.yaml` at the repository root.
-  3. `configs/clusters/vm-standard.yaml` (portable generic fallback).
-- **Target Nodes (`cabrita up`, `cabrita down`, `cabrita status`, `cabrita power`, `cabrita configure`, `cabrita bios`)**: Default to **all 3 nodes: `[1, 2, 3]`**. Target specific nodes using `-n <id>` (e.g. `-n 1` or `-n 1 -n 2`).
-- **SSH Target (`cabrita ssh`)**: Defaults to **Node 1** (`node1` at `10.2.72.1` / `192.168.122.101`). Use `cabrita ssh 2` or `cabrita ssh bastion`.
-- **Scaffolding (`cabrita init`)**: Defaults to `--provider vm` and `--profile standard`.
-- **BIOS Profile (`cabrita up`, `cabrita bios apply`)**: Defaults to `--bios-profile hpc` (Maximum Performance, NUMA on, Hyper-Threading off).
-- **Teardown Mode (`cabrita down`)**: Defaults to graceful shutdown (`--graceful`, 60s timeout) preserving disk images unless `--purge` is passed.
+- **Cluster manifest**: Lifecycle commands use `./cluster.yaml`. Select another manifest with `--cluster <path>`; artifact and template paths resolve relative to that manifest.
+- **Target nodes**: Commands target the nodes declared in the manifest. Select a subset with repeatable `--node` options, using IDs from your manifest.
+- **SSH**: Select a declared node explicitly, for example `cabrita ssh --cluster cluster.yaml --node 1 -- hostname` if your manifest declares node 1.
+- **Scaffolding**: `cabrita init` defaults to `--provider libvirt`. Use `--provider helvetios` for physical nodes.
+- **Shutdown**: `cabrita down` stops nodes and preserves disks. Use `cabrita destroy` to remove managed virtual resources.
 
 ---
 
@@ -88,11 +84,10 @@ uv run cabrita status --no-probe
 Scaffold workspaces, inspect pre-packaged configurations, and validate custom overrides:
 
 ```bash
-# Scaffold a local VM workspace with values.yaml and templates (standard portable profile)
-uv run cabrita init --provider vm --profile standard
+# Scaffold a local VM workspace with cluster.yaml and templates (standard portable profile)
+uv run cabrita init --provider libvirt
 
-# Scaffold a hardware-optimized VM workspace matching host CPU/virtio-scsi/io_uring
-uv run cabrita init --provider vm --profile hw-optimized
+# Customize CPU, memory, firmware, and disks in the generated cluster.yaml
 
 # Scaffold a Helvetios bare-metal HPC workspace
 uv run cabrita init --provider helvetios
@@ -104,14 +99,14 @@ uv run cabrita cluster list
 uv run cabrita cluster show configs/clusters/vm-hw-optimized.yaml
 
 # Validate manifest schema, IP formatting, and unique allocations
-uv run cabrita cluster validate values.yaml
+uv run cabrita cluster validate cluster.yaml
 ```
 
 ---
 
 ### 3. Integrated Execution Plan & Drift Diff (`up --dry-run` & `down --dry-run`)
 
-`cabrita` integrates planning directly into `cabrita up` and `cabrita down`. Like `terraform apply`, running `cabrita up` or `cabrita down` automatically computes and renders a declarative preview comparing declared configuration (`values.yaml` or `--cluster <path>`) against live observed state across hypervisor/BMC, database, and operational locks, prompting for confirmation before making changes:
+`cabrita` integrates planning directly into `cabrita up` and `cabrita down`. Like `terraform apply`, running `cabrita up` or `cabrita down` automatically computes and renders a declarative preview comparing declared configuration (`cluster.yaml` or `--cluster <path>`) against live observed state across hypervisor/BMC, database, and operational locks, prompting for confirmation before making changes:
 
 ```bash
 # Preview startup execution plan and prompt for confirmation:
@@ -128,30 +123,12 @@ uv run cabrita up --yes
 uv run cabrita down --dry-run
 ```
 
-**Example Plan Output:**
-```text
-╭───────────────────────── SCC Cluster Execution Plan ─────────────────────────╮
-│ Cluster Manifest: vm-hw-optimized                                            │
-│ (/home/orpheezt/personal/CABRITA_CARLA/configs/clusters/vm-hw-optimized.yaml)    │
-│ Provider: libvirt | Nodes: 3 | Description: Hardware-optimized QEMU/KVM      │
-│ cluster with host-passthrough, UEFI, virtio-scsi, io_uring, and vhost        │
-╰──────────────────────────────────────────────────────────────────────────────╯
-                                Resource State & Drift Comparison       
-┏━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━┓
-┃ Resource             ┃ Type          ┃ Declared State               ┃ Observed Live State    ┃ Action      ┃
-┡━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━┩
-│ Cluster Locks        │ Lock          │ Exclusive cluster lease      │ Free (No active locks) │ * TASK      │
-│ Network Subnet       │ Network       │ Gateway: 192.168.122.1, DNS: │ Bridge/Subnet 192.168. │ = NOOP      │
-│ VM Domain 'node1'    │ Libvirt       │ 8 vCPU, 16384MB RAM, EFI,    │ Non-existent           │ + CREATE    │
-│ Disk Overlay 'node1' │ CoW Storage   │ 60 GB, bus: scsi, io_uring   │ Not created            │ + CREATE    │
-│ VM Domain 'node2'    │ Libvirt       │ 4 vCPU, 8192MB RAM, EFI,     │ Non-existent           │ + CREATE    │
-│ Disk Overlay 'node2' │ CoW Storage   │ 40 GB, bus: scsi, io_uring   │ Not created            │ + CREATE    │
-│ VM Domain 'node3'    │ Libvirt       │ 4 vCPU, 8192MB RAM, EFI,     │ Non-existent           │ + CREATE    │
-│ Disk Overlay 'node3' │ CoW Storage   │ 40 GB, bus: scsi, io_uring   │ Not created            │ + CREATE    │
-│ Ansible Playbook     │ Configuration │ Roles: common, ib, hpc_tune  │ Pending OS & SSH       │ * TASK      │
-└──────────────────────┴───────────────┴──────────────────────────────┴────────────────────────┴─────────────┘
+**Example plan output** (node IDs and hostnames come from `cluster.yaml`):
 
-Plan: 6 to create, 0 to update, 0 to destroy, 2 operational task(s), 1 unchanged.
+```text
+1 node1: deploy
+2 node2: deploy
+3 node3: deploy
 ```
 
 ---
@@ -198,7 +175,7 @@ uv run cabrita deploy -a
 Idempotent cluster configuration and verification powered by Ansible:
 
 > [!NOTE]
-> The Ansible dynamic inventory ([`ansible/inventory/dynamic_inventory.py`](ansible/inventory/dynamic_inventory.py)) automatically extracts cluster topology, node IPs, roles (`headnode`, `computenode`), usernames, and network parameters directly from `values.yaml` (when present in your working directory) or from `configs/clusters/<cluster>.yaml` (such as `helvetios-hpc.yaml` or `vm-hw-optimized.yaml`). You can also specify an explicit cluster manifest or override file using `--cluster <path>` or the `CABRITA_CLUSTER_MANIFEST` environment variable.
+> The Ansible dynamic inventory ([`ansible/inventory/dynamic_inventory.py`](ansible/inventory/dynamic_inventory.py)) automatically extracts cluster topology, node IPs, roles (`headnode`, `computenode`), usernames, and network parameters directly from `cluster.yaml` (when present in your working directory) or from `configs/clusters/<cluster>.yaml` (such as `helvetios-hpc.yaml` or `vm-hw-optimized.yaml`). You can also specify an explicit cluster manifest or override file using `--cluster <path>` or the `CABRITA_CLUSTER_MANIFEST` environment variable.
 
 ```bash
 # Configure all cluster nodes (hosts, base packages, InfiniBand, RDMA limits)
@@ -354,7 +331,7 @@ Configuration is loaded from environment variables (prefixed with `CABRITA_`) or
 | `CABRITA_TEAM_ID` | `72` | Competition team identifier |
 | `CABRITA_PROVIDER` | `libvirt` | Default node provider (`libvirt`, `helvetios`, `bmc`, `chameleon`) |
 | `CABRITA_CLUSTER` | `vm-standard` | Default named cluster profile in `configs/clusters/` |
-| `CABRITA_CLUSTER_MANIFEST` | *(auto)* | Explicit path to active cluster manifest or `values.yaml` |
+| `CABRITA_CLUSTER_MANIFEST` | *(auto)* | Explicit path to active cluster manifest or `cluster.yaml` |
 | `CABRITA_BASTION_SSH_HOST` | `cabrita-bastion` | SSH host alias for bastion gateway |
 | `CABRITA_BASTION_HTTP_IP` | `10.7.12.101` | Bastion internal IP for iLO HTTP serving |
 | `CABRITA_BASTION_HTTP_PORT` | `8072` | Ephemeral HTTP server port on bastion |
@@ -398,7 +375,7 @@ uv run cabrita up --dry-run --cluster configs/clusters/vm-standard.yaml
 
 Comprehensive architecture, hardware, and performance guides:
 
-- [Bare-Metal Competition Cluster Guide & Troubleshooting](docs/QUICKSTART_CABRITA_CARLA2026.md) - Dedicated runbook, failure modes, error codes, and troubleshooting manual for Helvetios.
+- [Bare-Metal Competition Cluster Guide & Troubleshooting](docs/QUICKSTART_SCC_CARLA2026.md) - Dedicated runbook, failure modes, error codes, and troubleshooting manual for Helvetios.
 - [Competence Replication Guide (Libvirt to Helvetios)](docs/COMPETENCE_REPLICATION.md) - Matrix of what can be replicated locally with 100% fidelity vs physical HPC.
 - [Cluster Hardware Specifications (SPECS)](docs/SPECS.md) - Deep dive into Helvetios dual-socket Xeon Gold 6140, AVX-512 frequencies, and $R_{\text{peak}}$.
 - [InfiniBand & MPI+UCX Guide](docs/NETWORKING.md) - 100 Gbps ConnectX-5 architecture, RDMA, IPoIB, and OpenMPI/UCX tuning.
