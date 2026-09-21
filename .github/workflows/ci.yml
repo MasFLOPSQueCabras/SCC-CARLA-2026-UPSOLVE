@@ -5,7 +5,6 @@ on:
     paths:
       - 'tests/**'
       - 'src/**'
-      - 'packages/**'
       - 'configs/**'
       - 'templates/**'
       - 'ansible/**'
@@ -16,7 +15,6 @@ on:
     paths:
       - 'tests/**'
       - 'src/**'
-      - 'packages/**'
       - 'configs/**'
       - 'templates/**'
       - 'ansible/**'
@@ -49,7 +47,7 @@ jobs:
           enable-cache: true
 
       - name: Sync dependencies
-        run: uv sync --locked --all-packages
+        run: uv sync --locked
 
       - name: Format check
         run: uv run ruff format --check --output-format=github .
@@ -75,8 +73,8 @@ jobs:
 
       - name: Sync dependencies
         run: |
-          uv sync --locked --all-packages
-          uv pip install libvirt-python
+          uv sync --locked
+          uv sync --locked --all-extras
 
       - name: Lint
         run: uv run ruff check --output-format=github .
@@ -108,14 +106,14 @@ jobs:
 
       - name: Sync dependencies
         run: |
-          uv sync --locked --all-packages
-          uv pip install libvirt-python
+          uv sync --locked
+          uv sync --locked --all-extras
 
       - name: Validate pre-packaged cluster configs
         run: |
-          uv run scc-carla cluster validate configs/clusters/vm-standard.yaml
-          uv run scc-carla cluster validate configs/clusters/vm-hw-optimized.yaml
-          uv run scc-carla cluster validate configs/clusters/helvetios-hpc.yaml
+          uv run cabrita cluster validate configs/clusters/vm-standard.yaml
+          uv run cabrita cluster validate configs/clusters/vm-hw-optimized.yaml
+          uv run cabrita cluster validate configs/clusters/helvetios-hpc.yaml
 
       - name: Install Ansible collections
         run: |
@@ -124,8 +122,8 @@ jobs:
       - name: Validate Ansible dynamic inventory
         run: |
           uv run ansible-inventory -i ansible/inventory/dynamic_inventory.py --list
-          SCC_CLUSTER_MANIFEST=configs/clusters/vm-standard.yaml uv run ansible-inventory -i ansible/inventory/dynamic_inventory.py --list
-          SCC_CLUSTER_MANIFEST=configs/clusters/vm-hw-optimized.yaml uv run ansible-inventory -i ansible/inventory/dynamic_inventory.py --list
+          CABRITA_CLUSTER_MANIFEST=configs/clusters/vm-standard.yaml uv run ansible-inventory -i ansible/inventory/dynamic_inventory.py --list
+          CABRITA_CLUSTER_MANIFEST=configs/clusters/vm-hw-optimized.yaml uv run ansible-inventory -i ansible/inventory/dynamic_inventory.py --list
 
       - name: Validate Ansible playbooks syntax
         run: |
@@ -133,5 +131,5 @@ jobs:
 
       - name: Verify cluster execution plan (Generic Libvirt)
         run: |
-          uv run scc-carla up --dry-run --cluster configs/clusters/vm-standard.yaml
-          uv run scc-carla down --dry-run --cluster configs/clusters/vm-standard.yaml
+          uv run cabrita up --dry-run --cluster configs/clusters/vm-standard.yaml
+          uv run cabrita down --dry-run --cluster configs/clusters/vm-standard.yaml

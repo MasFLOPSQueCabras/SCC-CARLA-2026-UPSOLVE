@@ -2,14 +2,6 @@ version = 1
 revision = 3
 requires-python = ">=3.14"
 
-[manifest]
-members = [
-    "scc-carla",
-    "scc-core",
-    "scc-provider-helvetios",
-    "scc-provider-libvirt",
-]
-
 [[package]]
 name = "annotated-doc"
 version = "0.0.5"
@@ -55,6 +47,66 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/a9/d2/f4d173e22df740bc37b1db102b386ba719b66e95b0f0d751f556b387e6d2/anyio-4.15.1.tar.gz", hash = "sha256:9f28306018cbd6d329e64a36d58256edff76dd996fe423bc957326e578b82a94", size = 276966, upload-time = "2026-09-05T10:42:39.44Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/12/b8/4bd346e22b28902df4d651910f5242c28d84e4a5c2435ca5c3f797ed7e2e/anyio-4.15.1-py3-none-any.whl", hash = "sha256:6152fdbbf9a77fdec97731721bebf7c4c44f7c29b424b0065826173efc7ed101", size = 132079, upload-time = "2026-09-05T10:42:37.923Z" },
+]
+
+[[package]]
+name = "cabrita"
+version = "1.0.0"
+source = { editable = "." }
+dependencies = [
+    { name = "ansible-core" },
+    { name = "jinja2" },
+    { name = "platformdirs" },
+    { name = "pydantic-settings" },
+    { name = "pyturso" },
+    { name = "pyyaml" },
+    { name = "rich" },
+    { name = "typer" },
+]
+
+[package.optional-dependencies]
+all = [
+    { name = "httpx2", extra = ["socks"] },
+    { name = "libvirt-python" },
+    { name = "rangehttpserver" },
+]
+helvetios = [
+    { name = "httpx2", extra = ["socks"] },
+    { name = "rangehttpserver" },
+]
+libvirt = [
+    { name = "libvirt-python" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "ruff" },
+    { name = "ty" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "ansible-core", specifier = ">=2.21.4" },
+    { name = "cabrita", extras = ["libvirt", "helvetios"], marker = "extra == 'all'" },
+    { name = "httpx2", extras = ["socks"], marker = "extra == 'helvetios'", specifier = ">=2.13.0" },
+    { name = "jinja2", specifier = ">=3.1.6" },
+    { name = "libvirt-python", marker = "extra == 'libvirt'", specifier = ">=12.0.0" },
+    { name = "platformdirs", specifier = ">=4.11.11" },
+    { name = "pydantic-settings", specifier = ">=2.15.0" },
+    { name = "pyturso", specifier = ">=0.7.2" },
+    { name = "pyyaml", specifier = ">=6.0.3" },
+    { name = "rangehttpserver", marker = "extra == 'helvetios'", specifier = ">=1.4.0" },
+    { name = "rich", specifier = ">=15.0.0" },
+    { name = "typer", specifier = ">=0.27.2" },
+]
+provides-extras = ["libvirt", "helvetios", "all"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=9.1.1" },
+    { name = "ruff", specifier = ">=0.16.8" },
+    { name = "ty", specifier = ">=0.0.81" },
 ]
 
 [[package]]
@@ -256,6 +308,12 @@ sdist = { url = "https://files.pythonhosted.org/packages/df/bf/f7da0350254c0ed7c
 wheels = [
     { url = "https://files.pythonhosted.org/packages/62/a1/3d680cbfd5f4b8f15abc1d571870c5fc3e594bb582bc3b64ea099db13e56/jinja2-3.1.6-py3-none-any.whl", hash = "sha256:85ece4451f492d0c13c5dd7c13a64681a86afae63a5f347908daf103ce6d2f67", size = 134899, upload-time = "2025-03-05T20:05:00.369Z" },
 ]
+
+[[package]]
+name = "libvirt-python"
+version = "12.7.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/00/19/729ba9584cac034ecaa8a42ebb6412007382dda13df635ac61adecd7e949/libvirt_python-12.7.0.tar.gz", hash = "sha256:03a6800a3cc7657267e2516f579ce95c93d6351182caf03f92a49556685bf8bf", size = 256560, upload-time = "2026-09-01T08:34:07.984Z" }
 
 [[package]]
 name = "markdown-it-py"
@@ -543,117 +601,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/3d/02/7f10ef4700bc223c30a3fdd10631a29830c45524b810a3c7ed947af64591/ruff-0.16.8-py3-none-win32.whl", hash = "sha256:55793ba85c69921e89be061426d91a78652d6e50317c962240922747a4eb713f", size = 10093472, upload-time = "2026-09-16T15:54:37.47Z" },
     { url = "https://files.pythonhosted.org/packages/1e/5d/a509c07d714b6da88f2c518b4637cf6f1d46b074be8f0f1e5fb9ff5126fe/ruff-0.16.8-py3-none-win_amd64.whl", hash = "sha256:a6b85621fd3c81e31fc5f5add09c9c078b430db3595ca632efafdec9e64ebfaa", size = 10586899, upload-time = "2026-09-16T15:54:40.488Z" },
     { url = "https://files.pythonhosted.org/packages/fe/a0/50787329e4f20bf9dc9f6230015d46ec69c51a97ace5bc202dae4755365d/ruff-0.16.8-py3-none-win_arm64.whl", hash = "sha256:d075e820af612102ce217f07cc93e69f9490b10ec13ea85fa87bd03d996cef8a", size = 10386316, upload-time = "2026-09-16T15:54:43.332Z" },
-]
-
-[[package]]
-name = "scc-carla"
-version = "0.1.0"
-source = { editable = "." }
-dependencies = [
-    { name = "ansible-core" },
-    { name = "platformdirs" },
-    { name = "pydantic-settings" },
-    { name = "pyturso" },
-    { name = "rich" },
-    { name = "scc-core" },
-    { name = "scc-provider-helvetios" },
-    { name = "scc-provider-libvirt" },
-    { name = "typer" },
-]
-
-[package.optional-dependencies]
-all = [
-    { name = "scc-provider-helvetios" },
-    { name = "scc-provider-libvirt" },
-]
-helvetios = [
-    { name = "scc-provider-helvetios" },
-]
-libvirt = [
-    { name = "scc-provider-libvirt" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "pytest" },
-    { name = "ruff" },
-    { name = "ty" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "ansible-core", specifier = ">=2.21.4" },
-    { name = "platformdirs", specifier = ">=4.11.11" },
-    { name = "pydantic-settings", specifier = ">=2.15.0" },
-    { name = "pyturso", specifier = ">=0.7.2" },
-    { name = "rich", specifier = ">=15.0.0" },
-    { name = "scc-core", editable = "packages/scc-core" },
-    { name = "scc-provider-helvetios", editable = "packages/scc-provider-helvetios" },
-    { name = "scc-provider-helvetios", marker = "extra == 'all'", editable = "packages/scc-provider-helvetios" },
-    { name = "scc-provider-helvetios", marker = "extra == 'helvetios'", editable = "packages/scc-provider-helvetios" },
-    { name = "scc-provider-libvirt", editable = "packages/scc-provider-libvirt" },
-    { name = "scc-provider-libvirt", marker = "extra == 'all'", editable = "packages/scc-provider-libvirt" },
-    { name = "scc-provider-libvirt", marker = "extra == 'libvirt'", editable = "packages/scc-provider-libvirt" },
-    { name = "typer", specifier = ">=0.27.2" },
-]
-provides-extras = ["libvirt", "helvetios", "all"]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "pytest", specifier = ">=9.1.1" },
-    { name = "ruff", specifier = ">=0.16.8" },
-    { name = "ty", specifier = ">=0.0.81" },
-]
-
-[[package]]
-name = "scc-core"
-version = "0.1.0"
-source = { editable = "packages/scc-core" }
-dependencies = [
-    { name = "jinja2" },
-    { name = "pydantic" },
-    { name = "pyyaml" },
-    { name = "rich" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "jinja2", specifier = ">=3.1.6" },
-    { name = "pydantic", specifier = ">=2.10.0" },
-    { name = "pyyaml", specifier = ">=6.0.3" },
-    { name = "rich", specifier = ">=15.0.0" },
-]
-
-[[package]]
-name = "scc-provider-helvetios"
-version = "0.1.0"
-source = { editable = "packages/scc-provider-helvetios" }
-dependencies = [
-    { name = "httpx2", extra = ["socks"] },
-    { name = "rangehttpserver" },
-    { name = "scc-core" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "httpx2", extras = ["socks"], specifier = ">=2.13.0" },
-    { name = "rangehttpserver", specifier = ">=1.4.0" },
-    { name = "scc-core", editable = "packages/scc-core" },
-]
-
-[[package]]
-name = "scc-provider-libvirt"
-version = "0.1.0"
-source = { editable = "packages/scc-provider-libvirt" }
-dependencies = [
-    { name = "rich" },
-    { name = "scc-core" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "rich", specifier = ">=15.0.0" },
-    { name = "scc-core", editable = "packages/scc-core" },
 ]
 
 [[package]]

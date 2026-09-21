@@ -40,8 +40,8 @@ The core engineering objective is: **"If it works locally in Libvirt, it must de
 | **MPI Runtime** | OpenMPI / MPICH + UCX | UCX over TCP / Sockets | UCX over `mlx5_ib` / RC verbs | **High (Logical 1:1)** | Command line options, rank placement, and hostfiles are identical. |
 | **Benchmarks** | HPL Execution & Validation | Small $N$ ($10\text{k}-20\text{k}$) | Full $N$ ($\approx 140\text{k}$) | **100% (Correctness)** | Mathematical residual check ($r < 16.0$) and process grid logic are identical. |
 | **Benchmarks** | HPL Peak FLOPS ($R_{\text{max}}$) | Virtual CPU FLOPS | Physical Dual-Socket AVX-512 | **Hardware-bound** | Scaling and power efficiency must be measured on Helvetios hardware. |
-| **Management** | Power & Reset Operations | `virsh destroy` / `start` | HPE iLO Redfish REST API | **Provider-abstracted** | Abstracted via `scc power on|off|restart` CLI commands. |
-| **Management** | Power Telemetry (Watts) | Libvirt Guest Metrics | HPE iLO Chassis Sensor (Watts) | **Provider-abstracted** | Abstracted via `scc power metrics [--watch]`. |
+| **Management** | Power & Reset Operations | `virsh destroy` / `start` | HPE iLO Redfish REST API | **Provider-abstracted** | Abstracted via `cabrita power on|off|restart` CLI commands. |
+| **Management** | Power Telemetry (Watts) | Libvirt Guest Metrics | HPE iLO Chassis Sensor (Watts) | **Provider-abstracted** | Abstracted via `cabrita power metrics [--watch]`. |
 
 ---
 
@@ -193,26 +193,26 @@ To validate your entire cluster software stack before touching Helvetios:
 
 ### Step 1: Initialize Workspace (if new cluster)
 ```bash
-scc init --provider vm
+cabrita init --provider vm
 ```
 Review and edit `values.yaml` if needed (e.g. adjust RAM or vCPUs).
 
 ### Step 2: Provision the Local Virtual Cluster
 ```bash
 # Deploys 3 VMs via fast QEMU copy-on-write overlay & cloud-init
-scc up -n 1,2,3
+cabrita up -n 1,2,3
 ```
 
 ### Step 3: Run Full Configuration via Ansible
 ```bash
 # Configures common, SSH trust, NFS /shared, hpc_tune, spack, and HPL
-scc configure
+cabrita configure
 ```
 
 ### Step 4: Verify Cluster Inter-Node Services
 ```bash
 # Connect to node1
-scc ssh node1
+cabrita ssh node1
 
 # On node1: Verify NFS mount across compute nodes
 ssh node2 "df -h /shared"
@@ -244,7 +244,7 @@ HPL_pdgesv() end time .......: Sun Sep 20 14:20:45 2026
 
 ### Step 6: Safe Teardown
 ```bash
-scc down
+cabrita down
 ```
 
 **Conclusion**: If the above 6 steps succeed on your local machine, your deployment playbooks, user accounts, NFS exports, SSH trust, Spack toolchain, and MPI orchestration are **100% verified and guaranteed ready** for deployment on Helvetios.

@@ -1,0 +1,45 @@
+---
+- name: Clone Spack repository to shared storage
+  ansible.builtin.git:
+    repo: "{{ spack_repo_url }}"
+    dest: "{{ spack_root }}"
+    version: "{{ spack_branch }}"
+    depth: 1
+  become: true
+  become_user: "{{ cluster_user }}"
+  when: inventory_hostname == nfs_server_host
+
+- name: Deploy Spack shell profile to /etc/profile.d/spack.sh
+  ansible.builtin.copy:
+    dest: /etc/profile.d/spack.sh
+    content: |
+      export SPACK_ROOT={{ spack_root }}
+      if [ -f "$SPACK_ROOT/share/spack/setup-env.sh" ]; then
+          source "$SPACK_ROOT/share/spack/setup-env.sh"
+      fi
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Auto-detect compilers in Spack on node1
+  ansible.builtin.shell: |
+    source {{ spack_root }}/share/spack/setup-env.sh
+    spack compiler find
+  args:
+    executable: /bin/bash
+  become: true
+  become_user: "{{ cluster_user }}"
+  when: inventory_hostname == nfs_server_host
+  changed_when: false
+
+- name: Auto-detect external system packages in Spack on node1
+  ansible.builtin.shell: |
+    source {{ spack_root }}/share/spack/setup-env.sh
+    spack external find --scope=site
+    spack external find --scope=site hwloc openssl
+  args:
+    executable: /bin/bash
+  become: true
+  become_user: "{{ cluster_user }}"
+  when: inventory_hostname == nfs_server_host
+  changed_when: false

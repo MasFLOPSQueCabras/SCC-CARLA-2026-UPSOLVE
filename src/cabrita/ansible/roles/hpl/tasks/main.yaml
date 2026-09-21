@@ -1,0 +1,31 @@
+---
+- name: Ensure HPL directories exist on shared storage
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ cluster_user }}"
+    group: "{{ cluster_user }}"
+    mode: '0755'
+  loop:
+    - "{{ nfs_mount_dir }}/hpl"
+    - "{{ nfs_mount_dir }}/hpl/bin"
+    - "{{ nfs_mount_dir }}/hpl/configs"
+  when: inventory_hostname == nfs_server_host
+
+- name: Deploy pre-tuned HPL.dat configuration
+  ansible.builtin.template:
+    src: HPL.dat.j2
+    dest: "{{ nfs_mount_dir }}/hpl/configs/HPL.dat"
+    owner: "{{ cluster_user }}"
+    group: "{{ cluster_user }}"
+    mode: '0644'
+  when: inventory_hostname == nfs_server_host
+
+- name: Deploy direct MPI runner script
+  ansible.builtin.template:
+    src: run_hpl.sh.j2
+    dest: "{{ nfs_mount_dir }}/hpl/run_hpl.sh"
+    owner: "{{ cluster_user }}"
+    group: "{{ cluster_user }}"
+    mode: '0755'
+  when: inventory_hostname == nfs_server_host

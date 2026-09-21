@@ -38,7 +38,7 @@ flowchart TD
 
 1. Configure your local `~/.ssh/config` to access the competition bastion:
    ```ssh-config
-   Host scc-bastion
+   Host cabrita-bastion
        HostName 10.7.12.101
        User scct-2672
        IdentityFile ~/.ssh/id_ed25519
@@ -52,17 +52,17 @@ flowchart TD
    ```
    Ensure the following keys are set correctly:
    ```ini
-   SCC_TEAM_ID=72
-   SCC_BMC_USER=admin
-   SCC_BMC_PASSWORD=your_actual_bmc_password
-   SCC_BASTION_SSH_HOST=scc-bastion
-   SCC_BASTION_HTTP_IP=10.7.12.101
-   SCC_BASTION_HTTP_PORT=8072
+   CABRITA_TEAM_ID=72
+   CABRITA_BMC_USER=admin
+   CABRITA_BMC_PASSWORD=your_actual_bmc_password
+   CABRITA_BASTION_SSH_HOST=cabrita-bastion
+   CABRITA_BASTION_HTTP_IP=10.7.12.101
+   CABRITA_BASTION_HTTP_PORT=8072
    ```
 
 3. Verify SSH and Bastion connectivity:
    ```bash
-   ssh scc-bastion "hostname && ip -br addr"
+   ssh cabrita-bastion "hostname && ip -br addr"
    ```
 
 ---
@@ -70,7 +70,7 @@ flowchart TD
 ### Step 1: Scaffold Helvetios Cluster Workspace
 
 ```bash
-uv run scc init --provider helvetios --dir .
+uv run cabrita init --provider helvetios --dir .
 ```
 *Creates `./values.yaml` customized for the Helvetios bare-metal profile and stages Kickstart templates in `./templates/`.*
 
@@ -82,10 +82,10 @@ Before booting the operating system, configure the compute nodes with low-latenc
 
 ```bash
 # Check current BIOS settings across nodes
-uv run scc bios status
+uv run cabrita bios status
 
 # Apply the competition HPC profile (defaults to all nodes [1, 2, 3])
-uv run scc bios apply hpc
+uv run cabrita bios apply hpc
 ```
 
 > [!NOTE]
@@ -93,21 +93,21 @@ uv run scc bios apply hpc
 
 ---
 
-### Step 3: Automated Bare-Metal Bootstrap (`scc up`)
+### Step 3: Automated Bare-Metal Bootstrap (`cabrita up`)
 
-`scc up` performs declarative planning, generates unattended OEMDRV driver images with `ks.cfg`, launches the ephemeral HTTP server on the Bastion, attaches ISO/floppy images via HPE iLO Redfish Virtual Media, powers on nodes, and waits for SSH accessibility in parallel:
+`cabrita up` performs declarative planning, generates unattended OEMDRV driver images with `ks.cfg`, launches the ephemeral HTTP server on the Bastion, attaches ISO/floppy images via HPE iLO Redfish Virtual Media, powers on nodes, and waits for SSH accessibility in parallel:
 
 ```bash
 # Preview the execution plan diff and prompt for confirmation:
-uv run scc up --cluster configs/clusters/helvetios-hpc.yaml
+uv run cabrita up --cluster configs/clusters/helvetios-hpc.yaml
 
 # Or execute with auto-approval:
-uv run scc up --cluster configs/clusters/helvetios-hpc.yaml --yes
+uv run cabrita up --cluster configs/clusters/helvetios-hpc.yaml --yes
 ```
 
 ---
 
-### Step 4: Configure HPC Stack, NFS & InfiniBand (`scc configure`)
+### Step 4: Configure HPC Stack, NFS & InfiniBand (`cabrita configure`)
 
 Once nodes are SSH-reachable, deploy the full post-provisioning software stack:
 - **Common**: Firewall, base dev packages, ED25519 cluster passwordless SSH keys.
@@ -117,7 +117,7 @@ Once nodes are SSH-reachable, deploy the full post-provisioning software stack:
 - **Spack & HPL**: Centralized Spack installation with GCC 14.3.1, AVX-512 OpenBLAS, UCX 1.17, OpenMPI 5.0, and Linpack 2.3.
 
 ```bash
-uv run scc configure
+uv run cabrita configure
 ```
 
 ---
@@ -126,13 +126,13 @@ uv run scc configure
 
 1. **Verify InfiniBand Fabrics**:
    ```bash
-   uv run scc configure --playbook ansible/playbooks/verify_ib.yaml
+   uv run cabrita configure --playbook ansible/playbooks/verify_ib.yaml
    ```
 
 2. **Execute HPL Linpack Benchmark**:
    ```bash
    # Log into Node 1
-   uv run scc ssh 1
+   uv run cabrita ssh 1
 
    # Run direct MPI Linpack benchmark across Nodes 1 & 2 (72 cores)
    /shared/hpl/run_hpl.sh
@@ -141,16 +141,16 @@ uv run scc configure
 
 ---
 
-### Step 6: Cluster Teardown (`scc down`)
+### Step 6: Cluster Teardown (`cabrita down`)
 
 To decommission nodes, unmount virtual media, and sweep background servers:
 
 ```bash
 # Interactive teardown preview and confirmation:
-uv run scc down
+uv run cabrita down
 
 # Or force teardown and reset database state non-interactively:
-uv run scc down --reset-db --yes
+uv run cabrita down --reset-db --yes
 ```
 
 ---
@@ -161,21 +161,21 @@ uv run scc down --reset-db --yes
 **Symptom**: `Failed to mount and boot` or HTTP 401 / 500 from iLO.
 **Possible Causes**:
 - Stale Virtual Media session on iLO.
-- Incorrect `SCC_BMC_USER` or `SCC_BMC_PASSWORD` in `.env`.
+- Incorrect `CABRITA_BMC_USER` or `CABRITA_BMC_PASSWORD` in `.env`.
 - SOCKS5 proxy or Bastion SSH tunnel disconnected.
 
 **Troubleshooting Steps**:
 1. Check BMC power status directly:
    ```bash
-   uv run scc power status
+   uv run cabrita power status
    ```
 2. Reset Virtual Media / Force power off via Redfish:
    ```bash
-   uv run scc power off --force
+   uv run cabrita power off --force
    ```
 3. Test direct HTTP reachability to iLO from Bastion:
    ```bash
-   ssh scc-bastion "curl -k -u '$SCC_BMC_USER:$SCC_BMC_PASSWORD' https://10.1.72.1/redfish/v1/Systems/1"
+   ssh cabrita-bastion "curl -k -u '$CABRITA_BMC_USER:$CABRITA_BMC_PASSWORD' https://10.1.72.1/redfish/v1/Systems/1"
    ```
 
 ---
@@ -185,13 +185,13 @@ uv run scc down --reset-db --yes
 **Possible Causes**: An orphaned background server from a previously aborted session is still holding port 8072.
 
 **Troubleshooting Steps**:
-1. Sweep background servers using `scc down`:
+1. Sweep background servers using `cabrita down`:
    ```bash
-   uv run scc down
+   uv run cabrita down
    ```
 2. Or kill the lingering process manually on the Bastion:
    ```bash
-   ssh scc-bastion "fuser -k 8072/tcp || ss -tulpn | grep 8072"
+   ssh cabrita-bastion "fuser -k 8072/tcp || ss -tulpn | grep 8072"
    ```
 
 ---
@@ -217,15 +217,15 @@ uv run scc down --reset-db --yes
 **Troubleshooting Steps**:
 1. Verify OpenSM is active on Node 1:
    ```bash
-   uv run scc ssh 1 "systemctl status opensm"
+   uv run cabrita ssh 1 "systemctl status opensm"
    ```
 2. Restart OpenSM on Node 1:
    ```bash
-   uv run scc ssh 1 "sudo systemctl restart opensm"
+   uv run cabrita ssh 1 "sudo systemctl restart opensm"
    ```
 3. Verify link status across all nodes:
    ```bash
-   uv run scc ssh 1 "ibstatus && ibstat"
+   uv run cabrita ssh 1 "ibstatus && ibstat"
    ```
 
 ---
@@ -237,15 +237,15 @@ uv run scc down --reset-db --yes
 **Troubleshooting Steps**:
 1. List all active locks:
    ```bash
-   uv run scc lock list
+   uv run cabrita lock list
    ```
 2. Break/release the lock:
    ```bash
-   uv run scc lock release all
+   uv run cabrita lock release all
    ```
 3. Or bypass with `--force-lock`:
    ```bash
-   uv run scc up --force-lock
+   uv run cabrita up --force-lock
    ```
 
 ---
@@ -257,9 +257,9 @@ uv run scc down --reset-db --yes
 **Troubleshooting Steps**:
 1. Re-run only the common configuration role:
    ```bash
-   uv run scc configure --tags common
+   uv run cabrita configure --tags common
    ```
 2. Test SSH directly between nodes:
    ```bash
-   uv run scc ssh 1 "ssh -o StrictHostKeyChecking=no 10.2.72.2 hostname"
+   uv run cabrita ssh 1 "ssh -o StrictHostKeyChecking=no 10.2.72.2 hostname"
    ```

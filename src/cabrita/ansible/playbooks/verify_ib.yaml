@@ -1,0 +1,22 @@
+---
+- name: Verify InfiniBand Fabric and Inter-Node RDMA
+  hosts: cluster
+  gather_facts: false
+  become: false
+  tasks:
+    - name: Ping all cluster peers over IPoIB
+      ansible.builtin.command: ping -c 3 {{ hostvars[item]['ib_ip'] }}
+      loop: "{{ ansible_play_hosts }}"
+      when:
+        - item != inventory_hostname
+        - hostvars[item]['ib_ip'] is defined
+      register: ping_results
+      changed_when: false
+
+    - name: Display ping summary
+      ansible.builtin.debug:
+        msg: >-
+          {{ inventory_hostname }} -> {{ item.item }} ({{ hostvars[item.item]['ib_ip'] }}):
+          {{ item.stdout_lines[-1] }}
+      loop: "{{ ping_results.results }}"
+      when: item.skipped is not defined or not item.skipped

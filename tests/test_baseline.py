@@ -3,16 +3,16 @@ from unittest.mock import Mock
 
 import pytest
 from rich.progress import Progress
-from scc_core.manifest import parse_manifest
-from scc_core.parallel import ParallelRunner
 from typer.testing import CliRunner
 
-from scc_carla.cli import app
-from scc_carla.commands import deploy
-from scc_carla.config import ClusterSettings
-from scc_carla.db import NodeLifecycle
-from scc_carla.image import ensure_cached_cloud_image
-from scc_carla.nodes import resolve_target_nodes
+from cabrita.cli import app
+from cabrita.commands import deploy
+from cabrita.config import ClusterSettings
+from cabrita.core.manifest import parse_manifest
+from cabrita.core.parallel import ParallelRunner
+from cabrita.db import NodeLifecycle
+from cabrita.image import ensure_cached_cloud_image
+from cabrita.nodes import resolve_target_nodes
 
 
 def test_nested_manifest_inheritance(manifest_text: str) -> None:
@@ -69,7 +69,7 @@ def test_explicit_artifact_selected(
     cache.mkdir()
     artifact = tmp_path / "selected.qcow2"
     artifact.write_bytes(b"explicit image")
-    monkeypatch.setattr("scc_carla.image.get_image_cache_dir", lambda: cache)
+    monkeypatch.setattr("cabrita.image.get_image_cache_dir", lambda: cache)
     settings = ClusterSettings(cloud_image_source="missing-default.qcow2")
     result = ensure_cached_cloud_image(settings, str(artifact))
     assert result.read_bytes() == artifact.read_bytes()

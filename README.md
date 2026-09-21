@@ -1,34 +1,26 @@
-# SCC@CARLA 2026 Cluster Management CLI (`scc-carla`)
+# Cabrita
 
-Automated provisioning, Redfish BIOS workload tuning, declarative cluster authoring, dual-provider execution (KVM/Libvirt & bare-metal Helvetios), and distributed lifecycle management for the SCC@CARLA HPC cluster.
+Cabrita manages user-authored clusters on local libvirt and Helvetios hardware.
+It packages the CLI, providers, templates, profiles, and Ansible resources in one
+Python distribution. SCC CARLA 2026 remains a competition configuration profile.
 
----
+Install with Python 3.14 or newer:
 
-## Architecture & UV Workspace
-
-The project is structured as a modular `uv` workspace comprising three foundation packages and a lean root CLI coordinator:
-
-```text
-SCC_CARLA/
-├── packages/
-│   ├── scc-core/                 # Manifests, Pydantic models, Jinja2 engine, hooks, ParallelRunner, locks
-│   ├── scc-provider-libvirt/     # QEMU/KVM provider, CoW overlays, CIDATA FAT generator, domain templating
-│   └── scc-provider-helvetios/   # HPE iLO Redfish REST client, SSH SOCKS5 tunnel, OEMDRV, Range HTTP server
-├── configs/clusters/             # Pre-packaged declarative cluster profiles (YAML)
-│   ├── vm-standard.yaml          # Generic portable Libvirt profile (SeaBIOS, host-model, virbr0)
-│   ├── vm-hw-optimized.yaml      # Hardware-tuned Libvirt profile (UEFI, host-passthrough, io_uring, virtio-scsi)
-│   └── helvetios-hpc.yaml        # Bare-metal HPC profile (dual Xeon Gold 6140, iLO Redfish, ConnectX-5 IB)
-├── ansible/                      # Post-provisioning configuration, dynamic inventory, and verification
-│   ├── inventory/
-│   │   └── dynamic_inventory.py  # Dynamic inventory resolving from values.yaml or cluster configs
-│   ├── playbooks/                # site.yaml (node_independent & cluster_coordination), verify_ib.yaml
-│   └── roles/                    # common, infiniband, hpc_tune, nfs_server, nfs_client, spack, hpl
-├── src/scc_carla/                # Modular Typer CLI application and command routers
-├── docs/                         # In-depth architectural, hardware, networking, and benchmark guides
-└── .github/workflows/ci.yml      # CI workflow for linting, type checks, manifest validation, and dynamic inventory
+```bash
+uv tool install cabrita
+uv tool install 'cabrita[libvirt]'
+uv tool install 'cabrita[helvetios]'
+cabrita --help
+cabrita --version
 ```
 
----
+For development, use `uv sync --extra helvetios` or `uv sync --all-extras`.
+Native prerequisites and migration details are in [docs/migration.md](docs/migration.md).
+The package is not yet published by this implementation; to test it locally,
+run `uv build` and install the generated wheel with `uv tool install <wheel>`.
+
+The source lives in `src/cabrita`: shared operations in `core`, optional backends
+in `providers`, and bundled configuration under `ansible` and provider resource directories.
 
 ## Pre-Packaged Cluster Profiles
 
@@ -48,11 +40,11 @@ Ensure dependencies and workspace packages are installed using `uv`:
 
 ```bash
 uv sync --all-packages
-uv run scc --help
+uv run cabrita --help
 ```
 
 > [!TIP]
-> Both `uv run scc` and `uv run scc-carla` can be used interchangeably to invoke the CLI.
+> The only executable is `cabrita`; legacy executable aliases were removed.
 
 > [!IMPORTANT]
 > **Looking for a 5-minute setup?** Check out the [Quickstart Guide](QUICKSTART.md) for copy-paste workflows, local VM sandboxing, and competition cluster bootstrapping.
@@ -61,17 +53,17 @@ uv run scc --help
 
 ## CLI Defaults & Target Resolution
 
-When commands are run without explicit parameters, `scc-carla` applies the following deterministic defaults:
+When commands are run without explicit parameters, `cabrita` applies the following deterministic defaults:
 
-- **Cluster Manifest Resolution (`scc plan`, `scc cluster validate`)**: Searches in order:
+- **Cluster Manifest Resolution (`cabrita plan`, `cabrita cluster validate`)**: Searches in order:
   1. `./values.yaml` in the current working directory.
   2. `values.yaml` at the repository root.
   3. `configs/clusters/vm-standard.yaml` (portable generic fallback).
-- **Target Nodes (`scc up`, `scc down`, `scc status`, `scc power`, `scc configure`, `scc bios`)**: Default to **all 3 nodes: `[1, 2, 3]`**. Target specific nodes using `-n <id>` (e.g. `-n 1` or `-n 1 -n 2`).
-- **SSH Target (`scc ssh`)**: Defaults to **Node 1** (`node1` at `10.2.72.1` / `192.168.122.101`). Use `scc ssh 2` or `scc ssh bastion`.
-- **Scaffolding (`scc init`)**: Defaults to `--provider vm` and `--profile standard`.
-- **BIOS Profile (`scc up`, `scc bios apply`)**: Defaults to `--bios-profile hpc` (Maximum Performance, NUMA on, Hyper-Threading off).
-- **Teardown Mode (`scc down`)**: Defaults to graceful shutdown (`--graceful`, 60s timeout) preserving disk images unless `--purge` is passed.
+- **Target Nodes (`cabrita up`, `cabrita down`, `cabrita status`, `cabrita power`, `cabrita configure`, `cabrita bios`)**: Default to **all 3 nodes: `[1, 2, 3]`**. Target specific nodes using `-n <id>` (e.g. `-n 1` or `-n 1 -n 2`).
+- **SSH Target (`cabrita ssh`)**: Defaults to **Node 1** (`node1` at `10.2.72.1` / `192.168.122.101`). Use `cabrita ssh 2` or `cabrita ssh bastion`.
+- **Scaffolding (`cabrita init`)**: Defaults to `--provider vm` and `--profile standard`.
+- **BIOS Profile (`cabrita up`, `cabrita bios apply`)**: Defaults to `--bios-profile hpc` (Maximum Performance, NUMA on, Hyper-Threading off).
+- **Teardown Mode (`cabrita down`)**: Defaults to graceful shutdown (`--graceful`, 60s timeout) preserving disk images unless `--purge` is passed.
 
 ---
 
@@ -83,10 +75,10 @@ Inspect real-time cluster hardware power, SSH reachability, Turso database lifec
 
 ```bash
 # Full live hardware & network probe across all nodes in parallel
-uv run scc status
+uv run cabrita status
 
 # Fast database-only view without probing hardware
-uv run scc status --no-probe
+uv run cabrita status --no-probe
 ```
 
 ---
@@ -97,50 +89,50 @@ Scaffold workspaces, inspect pre-packaged configurations, and validate custom ov
 
 ```bash
 # Scaffold a local VM workspace with values.yaml and templates (standard portable profile)
-uv run scc init --provider vm --profile standard
+uv run cabrita init --provider vm --profile standard
 
 # Scaffold a hardware-optimized VM workspace matching host CPU/virtio-scsi/io_uring
-uv run scc init --provider vm --profile hw-optimized
+uv run cabrita init --provider vm --profile hw-optimized
 
 # Scaffold a Helvetios bare-metal HPC workspace
-uv run scc init --provider helvetios
+uv run cabrita init --provider helvetios
 
 # List all available pre-packaged cluster configs and active workspaces
-uv run scc cluster list
+uv run cabrita cluster list
 
 # Inspect hardware and network definitions of a specific cluster profile
-uv run scc cluster show configs/clusters/vm-hw-optimized.yaml
+uv run cabrita cluster show configs/clusters/vm-hw-optimized.yaml
 
 # Validate manifest schema, IP formatting, and unique allocations
-uv run scc cluster validate values.yaml
+uv run cabrita cluster validate values.yaml
 ```
 
 ---
 
 ### 3. Integrated Execution Plan & Drift Diff (`up --dry-run` & `down --dry-run`)
 
-`scc-carla` integrates planning directly into `scc up` and `scc down`. Like `terraform apply`, running `scc up` or `scc down` automatically computes and renders a declarative preview comparing declared configuration (`values.yaml` or `--cluster <path>`) against live observed state across hypervisor/BMC, database, and operational locks, prompting for confirmation before making changes:
+`cabrita` integrates planning directly into `cabrita up` and `cabrita down`. Like `terraform apply`, running `cabrita up` or `cabrita down` automatically computes and renders a declarative preview comparing declared configuration (`values.yaml` or `--cluster <path>`) against live observed state across hypervisor/BMC, database, and operational locks, prompting for confirmation before making changes:
 
 ```bash
 # Preview startup execution plan and prompt for confirmation:
-uv run scc up
+uv run cabrita up
 
 # Inspect startup diff without making changes (dry-run):
-uv run scc up --dry-run
-uv run scc up --dry-run --cluster configs/clusters/helvetios-hpc.yaml
+uv run cabrita up --dry-run
+uv run cabrita up --dry-run --cluster configs/clusters/helvetios-hpc.yaml
 
 # Auto-approve startup without interactive prompt:
-uv run scc up --yes
+uv run cabrita up --yes
 
 # Preview teardown execution plan (shows nodes to stop and disks to drop):
-uv run scc down --dry-run
+uv run cabrita down --dry-run
 ```
 
 **Example Plan Output:**
 ```text
 ╭───────────────────────── SCC Cluster Execution Plan ─────────────────────────╮
 │ Cluster Manifest: vm-hw-optimized                                            │
-│ (/home/orpheezt/personal/SCC_CARLA/configs/clusters/vm-hw-optimized.yaml)    │
+│ (/home/orpheezt/personal/CABRITA_CARLA/configs/clusters/vm-hw-optimized.yaml)    │
 │ Provider: libvirt | Nodes: 3 | Description: Hardware-optimized QEMU/KVM      │
 │ cluster with host-passthrough, UEFI, virtio-scsi, io_uring, and vhost        │
 ╰──────────────────────────────────────────────────────────────────────────────╯
@@ -170,19 +162,19 @@ Orchestrates entire deployment end-to-end: atomic lease locking, virtual media /
 
 ```bash
 # Provision a single node (default HPC BIOS profile)
-uv run scc up -n 1
+uv run cabrita up -n 1
 
 # Provision with no polling timeout (waits indefinitely until install completes)
-uv run scc up -n 1 --no-timeout
+uv run cabrita up -n 1 --no-timeout
 
 # Provision using an explicit cluster configuration
-uv run scc up -n 1 --cluster configs/clusters/vm-hw-optimized.yaml
+uv run cabrita up -n 1 --cluster configs/clusters/vm-hw-optimized.yaml
 
 # Provision all cluster nodes (1, 2, and 3) in parallel
-uv run scc up -a
+uv run cabrita up -a
 
 # Override an active or dead operational lock
-uv run scc up -n 1 --force
+uv run cabrita up -n 1 --force
 ```
 
 ---
@@ -193,10 +185,10 @@ Provisions operating system images (via Libvirt QEMU/KVM domain creation or HPE 
 
 ```bash
 # Deploy OS on node 1
-uv run scc deploy -n 1
+uv run cabrita deploy -n 1
 
 # Deploy OS across all 3 nodes concurrently
-uv run scc deploy -a
+uv run cabrita deploy -a
 ```
 
 ---
@@ -206,23 +198,23 @@ uv run scc deploy -a
 Idempotent cluster configuration and verification powered by Ansible:
 
 > [!NOTE]
-> The Ansible dynamic inventory ([`ansible/inventory/dynamic_inventory.py`](ansible/inventory/dynamic_inventory.py)) automatically extracts cluster topology, node IPs, roles (`headnode`, `computenode`), usernames, and network parameters directly from `values.yaml` (when present in your working directory) or from `configs/clusters/<cluster>.yaml` (such as `helvetios-hpc.yaml` or `vm-hw-optimized.yaml`). You can also specify an explicit cluster manifest or override file using `--cluster <path>` or the `SCC_CLUSTER_MANIFEST` environment variable.
+> The Ansible dynamic inventory ([`ansible/inventory/dynamic_inventory.py`](ansible/inventory/dynamic_inventory.py)) automatically extracts cluster topology, node IPs, roles (`headnode`, `computenode`), usernames, and network parameters directly from `values.yaml` (when present in your working directory) or from `configs/clusters/<cluster>.yaml` (such as `helvetios-hpc.yaml` or `vm-hw-optimized.yaml`). You can also specify an explicit cluster manifest or override file using `--cluster <path>` or the `CABRITA_CLUSTER_MANIFEST` environment variable.
 
 ```bash
 # Configure all cluster nodes (hosts, base packages, InfiniBand, RDMA limits)
-uv run scc configure
+uv run cabrita configure
 
 # Configure using a specific cluster profile
-uv run scc configure --cluster configs/clusters/vm-hw-optimized.yaml
+uv run cabrita configure --cluster configs/clusters/vm-hw-optimized.yaml
 
 # Dry-run check mode (preview changes without applying)
-uv run scc configure --check
+uv run cabrita configure --check
 
 # Target specific nodes
-uv run scc configure --limit node1,node2
+uv run cabrita configure --limit node1,node2
 
 # Run InfiniBand fabric verification playbook
-uv run scc configure -p verify_ib.yaml
+uv run cabrita configure -p verify_ib.yaml
 ```
 
 ---
@@ -233,32 +225,32 @@ Direct bare-metal power operations via BMC Redfish (or Libvirt KVM) without re-p
 
 ```bash
 # Inspect current hardware power state (all nodes)
-uv run scc power status
+uv run cabrita power status
 
 # Inspect a specific node
-uv run scc power status -n 1
+uv run cabrita power status -n 1
 
 # Power on node(s) in parallel and wait until confirmed ON
-uv run scc power on -n 1 --wait
-uv run scc power on -a -w
+uv run cabrita power on -n 1 --wait
+uv run cabrita power on -a -w
 
 # Power off node(s) gracefully and wait until confirmed OFF
-uv run scc power off -n 1 --wait
-uv run scc power off -a -w
+uv run cabrita power off -n 1 --wait
+uv run cabrita power off -a -w
 
 # Force immediate hardware power off
-uv run scc power off -n 1 --force -w
+uv run cabrita power off -n 1 --force -w
 
 # Reboot / restart node(s) in parallel
-uv run scc power restart -a -w
+uv run cabrita power restart -a -w
 
 # Live power draw telemetry (Current Watts, 20-min avg, Min, Peak, and Cluster Total)
-uv run scc power metrics
-uv run scc power metrics -n 1
+uv run cabrita power metrics
+uv run cabrita power metrics -n 1
 
 # Stream continuous live power metrics updates
-uv run scc power metrics --watch
-uv run scc power metrics -w -i 1.0
+uv run cabrita power metrics --watch
+uv run cabrita power metrics -w -i 1.0
 ```
 
 ---
@@ -269,16 +261,16 @@ Direct transparent jump through the bastion host to physical or virtual cluster 
 
 ```bash
 # Open interactive shell on node 1 (default)
-uv run scc ssh 1
+uv run cabrita ssh 1
 
 # Connect to node 2 or node 3
-uv run scc ssh 2
+uv run cabrita ssh 2
 
 # Open interactive shell on the bastion host
-uv run scc ssh bastion
+uv run cabrita ssh bastion
 
 # Execute remote command directly
-uv run scc ssh 1 "uname -a"
+uv run cabrita ssh 1 "uname -a"
 ```
 
 ---
@@ -289,14 +281,14 @@ Inspect, backup, and stage workload-optimized BIOS profiles via Redfish:
 
 ```bash
 # Inspect current BIOS configuration on a node
-uv run scc bios show -n 1
+uv run cabrita bios show -n 1
 
 # Backup BIOS settings to a JSON file
-uv run scc bios backup -n 1 -o bios_backup.json
+uv run cabrita bios backup -n 1 -o bios_backup.json
 
 # Stage a BIOS profile (takes effect on next reboot)
-uv run scc bios apply -n 1 -p hpc
-uv run scc bios apply -a -p low_latency
+uv run cabrita bios apply -n 1 -p hpc
+uv run cabrita bios apply -a -p low_latency
 ```
 
 ---
@@ -307,11 +299,11 @@ Distributed, zero-sudo SSH lease locks prevent team members from issuing conflic
 
 ```bash
 # List all active and expired locks
-uv run scc lock list
+uv run cabrita lock list
 
 # Release / break a specific lock (e.g. node-1, cluster, or all)
-uv run scc lock release node-1
-uv run scc lock release all
+uv run cabrita lock release node-1
+uv run cabrita lock release all
 ```
 
 ---
@@ -322,16 +314,16 @@ Ejects virtual media, destroys Libvirt domains, sweeps ephemeral HTTP background
 
 ```bash
 # Decommission a single node
-uv run scc down -n 1
+uv run cabrita down -n 1
 
 # Decommission all cluster nodes concurrently
-uv run scc down -a
+uv run cabrita down -a
 
 # Sweep lingering bastion background servers without touching nodes
-uv run scc down
+uv run cabrita down
 
 # Reset cluster database states back to UNPROVISIONED
-uv run scc down -a --reset-db
+uv run cabrita down -a --reset-db
 ```
 
 ---
@@ -342,32 +334,32 @@ Eliminates repeated 15-minute unattended OS installations by caching golden base
 
 ```bash
 # List all cached ISOs, base cloud images, and golden images
-uv run scc image list
+uv run cabrita image list
 
 # Inspect detailed image allocation, virtual size, and format
-uv run scc image inspect ~/.cache/scc_carla/images/Rocky-10-GenericCloud-Base.latest.x86_64.qcow2
+uv run cabrita image inspect ~/.cache/cabrita/images/Rocky-10-GenericCloud-Base.latest.x86_64.qcow2
 
 # Export and compress a QCOW2 golden image to .raw.zst for Bastion HTTP streaming
-uv run scc image export --source ~/.cache/scc_carla/golden/golden-rocky-base.qcow2
+uv run cabrita image export --source ~/.cache/cabrita/golden/golden-rocky-base.qcow2
 ```
 
 ---
 
 ## Configuration & Environment Variables
 
-Configuration is loaded from environment variables (prefixed with `SCC_`) or a local `.env` file:
+Configuration is loaded from environment variables (prefixed with `CABRITA_`) or a local `.env` file:
 
 | Setting | Default | Description |
 |---|---|---|
-| `SCC_TEAM_ID` | `72` | Competition team identifier |
-| `SCC_PROVIDER` | `libvirt` | Default node provider (`libvirt`, `helvetios`, `bmc`, `chameleon`) |
-| `SCC_CLUSTER` | `vm-standard` | Default named cluster profile in `configs/clusters/` |
-| `SCC_CLUSTER_MANIFEST` | *(auto)* | Explicit path to active cluster manifest or `values.yaml` |
-| `SCC_BASTION_SSH_HOST` | `scc-bastion` | SSH host alias for bastion gateway |
-| `SCC_BASTION_HTTP_IP` | `10.7.12.101` | Bastion internal IP for iLO HTTP serving |
-| `SCC_BASTION_HTTP_PORT` | `8072` | Ephemeral HTTP server port on bastion |
-| `SCC_BASTION_STATE_DB_PATH` | `~/.config/scc_carla/scc_state.db` | Shared Turso (`pyturso`) DB path on bastion |
-| `SCC_NODE_USERNAME` | `scct-2672` | Node OS administrative username |
+| `CABRITA_TEAM_ID` | `72` | Competition team identifier |
+| `CABRITA_PROVIDER` | `libvirt` | Default node provider (`libvirt`, `helvetios`, `bmc`, `chameleon`) |
+| `CABRITA_CLUSTER` | `vm-standard` | Default named cluster profile in `configs/clusters/` |
+| `CABRITA_CLUSTER_MANIFEST` | *(auto)* | Explicit path to active cluster manifest or `values.yaml` |
+| `CABRITA_BASTION_SSH_HOST` | `cabrita-bastion` | SSH host alias for bastion gateway |
+| `CABRITA_BASTION_HTTP_IP` | `10.7.12.101` | Bastion internal IP for iLO HTTP serving |
+| `CABRITA_BASTION_HTTP_PORT` | `8072` | Ephemeral HTTP server port on bastion |
+| `CABRITA_BASTION_STATE_DB_PATH` | `~/.config/cabrita/cabrita_state.db` | Shared Turso (`pyturso`) DB path on bastion |
+| `CABRITA_NODE_USERNAME` | `scct-2672` | Node OS administrative username |
 
 ---
 
@@ -386,9 +378,9 @@ uv run ruff check .
 uv run ty check
 
 # Validate all pre-packaged cluster manifests
-uv run scc cluster validate configs/clusters/vm-standard.yaml
-uv run scc cluster validate configs/clusters/vm-hw-optimized.yaml
-uv run scc cluster validate configs/clusters/helvetios-hpc.yaml
+uv run cabrita cluster validate configs/clusters/vm-standard.yaml
+uv run cabrita cluster validate configs/clusters/vm-hw-optimized.yaml
+uv run cabrita cluster validate configs/clusters/helvetios-hpc.yaml
 
 # Validate Ansible dynamic inventory
 uv run ansible-inventory -i ansible/inventory/dynamic_inventory.py --list
@@ -397,7 +389,7 @@ uv run ansible-inventory -i ansible/inventory/dynamic_inventory.py --list
 ANSIBLE_CONFIG=ansible/ansible.cfg uv run ansible-playbook -i ansible/inventory/dynamic_inventory.py --syntax-check ansible/playbooks/site.yaml ansible/playbooks/verify_ib.yaml
 
 # Verify execution plan dry-run
-uv run scc up --dry-run --cluster configs/clusters/vm-standard.yaml
+uv run cabrita up --dry-run --cluster configs/clusters/vm-standard.yaml
 ```
 
 ---
@@ -406,7 +398,7 @@ uv run scc up --dry-run --cluster configs/clusters/vm-standard.yaml
 
 Comprehensive architecture, hardware, and performance guides:
 
-- [Bare-Metal Competition Cluster Guide & Troubleshooting](docs/QUICKSTART_SCC_CARLA2026.md) - Dedicated runbook, failure modes, error codes, and troubleshooting manual for Helvetios.
+- [Bare-Metal Competition Cluster Guide & Troubleshooting](docs/QUICKSTART_CABRITA_CARLA2026.md) - Dedicated runbook, failure modes, error codes, and troubleshooting manual for Helvetios.
 - [Competence Replication Guide (Libvirt to Helvetios)](docs/COMPETENCE_REPLICATION.md) - Matrix of what can be replicated locally with 100% fidelity vs physical HPC.
 - [Cluster Hardware Specifications (SPECS)](docs/SPECS.md) - Deep dive into Helvetios dual-socket Xeon Gold 6140, AVX-512 frequencies, and $R_{\text{peak}}$.
 - [InfiniBand & MPI+UCX Guide](docs/NETWORKING.md) - 100 Gbps ConnectX-5 architecture, RDMA, IPoIB, and OpenMPI/UCX tuning.

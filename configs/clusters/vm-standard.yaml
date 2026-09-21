@@ -1,1 +1,52 @@
-../../packages/scc-provider-libvirt/src/scc_provider_libvirt/configs/vm-standard.yaml
+schema_version: 1
+name: vm-standard
+provider: libvirt
+description: "General portable 3-node virtual cluster on KVM/QEMU"
+
+network:
+  bridge: virbr0
+  network_name: default
+  subnet: "192.168.122.0/24"
+  gateway: "192.168.122.1"
+  dns: "192.168.122.1"
+
+defaults:
+  os:
+    cloud_image: "Rocky-10-GenericCloud-Base.latest.x86_64.qcow2"
+    cloud_image_source: "https://download.rockylinux.org/pub/rocky/10/images/x86_64/Rocky-10-GenericCloud-Base.latest.x86_64.qcow2"
+    username: "scct-2672"
+  vm:
+    vcpus: 4
+    memory_mb: 8192
+    disk:
+      size_gb: 40
+      bus: virtio
+      cache: writeback
+      discard: unmap
+    machine_type: q35
+    firmware: bios
+    cpu_mode: host-model
+
+nodes:
+  - id: 1
+    hostname: node1
+    role: headnode
+    ip: "192.168.122.101"
+    mac: "52:54:00:12:34:01"
+    vm:
+      vcpus: 8
+      memory_mb: 16384
+      disk:
+        size_gb: 60
+
+  - id: 2
+    hostname: node2
+    role: computenode
+    ip: "192.168.122.102"
+    mac: "52:54:00:12:34:02"
+
+  - id: 3
+    hostname: node3
+    role: computenode
+    ip: "192.168.122.103"
+    mac: "52:54:00:12:34:03"

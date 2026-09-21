@@ -1,0 +1,58 @@
+---
+- name: Deploy dynamic /etc/hosts from inventory
+  ansible.builtin.template:
+    src: hosts.j2
+    dest: /etc/hosts
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Install base operational and compilation packages
+  ansible.builtin.dnf:
+    name:
+      - pciutils
+      - ethtool
+      - git
+      - tmux
+      - tar
+      - curl
+      - make
+      - patch
+      - bzip2
+      - unzip
+      - file
+      - gcc
+      - gcc-c++
+      - gcc-gfortran
+      - bison
+      - flex
+      - m4
+      - autoconf
+      - automake
+      - libtool
+      - cmake
+      - rdma-core-devel
+      - hwloc-devel
+      - libevent-devel
+      - libxml2-devel
+      - numactl-devel
+      - openssl
+      - openssl-devel
+      - hwloc
+      - firewalld
+    state: present
+
+- name: Ensure firewalld is enabled and running
+  ansible.builtin.systemd_service:
+    name: firewalld
+    state: started
+    enabled: true
+
+- name: Ensure SSH is allowed in public firewalld zone
+  ansible.posix.firewalld:
+    service: ssh
+    zone: public
+    permanent: true
+    state: enabled
+    immediate: true
+  ignore_errors: true
