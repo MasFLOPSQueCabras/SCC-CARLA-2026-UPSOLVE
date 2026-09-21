@@ -2,6 +2,7 @@
 
 import hashlib
 from dataclasses import dataclass
+from ipaddress import ip_address
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -111,3 +112,22 @@ class ResolvedCluster:
                 or manifest.artifacts[payload].format != "raw.zst"
             ):
                 raise ValueError("Golden restore requires a declared raw.zst payload")
+            metadata = manifest.bootstrap.metadata
+            if (
+                not metadata
+                or metadata not in manifest.artifacts
+                or manifest.artifacts[metadata].format != "json"
+            ):
+                raise ValueError("Golden restore requires declared JSON metadata")
+
+    def recovery_endpoint(self) -> tuple[str, int]:
+        if self.manifest.provider == "helvetios":
+            bastion = self.manifest.bastion
+            return bastion.http_bind_ip, bastion.http_port
+        inputs = self.manifest.bootstrap.inputs
+        host = str(inputs.get("http_bind_ip", self.manifest.network.gateway))
+        port = int(inputs.get("http_port", 8072))
+        ip_address(host)
+        if not 1 <= port <= 65535:
+            raise ValueError("Recovery HTTP port must be between 1 and 65535")
+        return host, port

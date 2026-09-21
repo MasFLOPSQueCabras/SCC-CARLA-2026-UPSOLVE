@@ -7,15 +7,15 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+from cabrita.bootstrap.http_server import (
+    EphemeralRangeHTTPServer,
+    is_running_on_bastion,
+)
 from cabrita.config import ClusterSettings
 from cabrita.core.manifest.models import ClusterManifest, NodeSpec
 from cabrita.core.providers.base import NodeProvider, PowerState, ProviderPaths
 from cabrita.core.templating import TemplateEngine
 from cabrita.providers.helvetios.bmc_client import BMCController
-from cabrita.providers.helvetios.media_server import (
-    EphemeralRangeHTTPServer,
-    is_running_on_bastion,
-)
 
 
 class HelvetiosProvider(NodeProvider):

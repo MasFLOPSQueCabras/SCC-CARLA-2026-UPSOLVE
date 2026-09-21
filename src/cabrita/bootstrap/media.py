@@ -9,6 +9,7 @@ from pathlib import Path
 from cabrita.bootstrap import iso_builder
 from cabrita.bootstrap.artifacts import ArtifactCache, artifact_lock
 from cabrita.bootstrap.iso_builder import cached_build
+from cabrita.bootstrap.recovery import render_recovery
 from cabrita.core.bootstrap import BootstrapMethod
 from cabrita.core.manifest import NodeSpec
 from cabrita.core.resolved import ResolvedCluster
@@ -28,6 +29,8 @@ def prepare_media(
     templates: TemplateEngine,
     public_key: str,
     work: Path,
+    *,
+    kickstart: Path | None = None,
 ) -> PreparedMedia:
     bootstrap = cluster.manifest.bootstrap
     assert bootstrap.artifact is not None
@@ -37,9 +40,24 @@ def prepare_media(
     if bootstrap.method not in (
         BootstrapMethod.EMBEDDED_KICKSTART,
         BootstrapMethod.OEMDRV,
+        BootstrapMethod.GOLDEN_RESTORE,
     ):
         raise ValueError(f"Unsupported media preparation: {bootstrap.method}")
-    kickstart = render_kickstart(cluster, node, templates, public_key, work)
+    if kickstart is None:
+        if bootstrap.method == BootstrapMethod.GOLDEN_RESTORE:
+            assert bootstrap.payload is not None
+            payload = cache.materialize(cluster.manifest.artifacts[bootstrap.payload])
+            host, port = cluster.recovery_endpoint()
+            kickstart = render_recovery(
+                cluster,
+                node,
+                cache,
+                public_key,
+                work,
+                f"http://{host}:{port}/{payload.name}",
+            )
+        else:
+            kickstart = render_kickstart(cluster, node, templates, public_key, work)
     digest = hashlib.sha256(
         json.dumps(
             {
@@ -59,7 +77,7 @@ def prepare_media(
             base,
             kickstart,
             target,
-            embedded=bootstrap.method == BootstrapMethod.EMBEDDED_KICKSTART,
+            embedded=bootstrap.method != BootstrapMethod.OEMDRV,
         )
         if bootstrap.method == BootstrapMethod.OEMDRV:
             return PreparedMedia(target, target.with_suffix(".img"))

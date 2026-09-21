@@ -7,9 +7,10 @@ from pathlib import Path
 from urllib.parse import quote
 
 from cabrita.bootstrap import iso_builder
-from cabrita.bootstrap.artifacts import ArtifactCache
+from cabrita.bootstrap.artifacts import ArtifactCache, artifact_lock
 from cabrita.bootstrap.media import prepare_media, render_kickstart
-from cabrita.core.bootstrap import BootstrapMethod
+from cabrita.bootstrap.recovery import render_recovery
+from cabrita.core.bootstrap import ArtifactSpec, BootstrapMethod
 from cabrita.core.manifest import NodeSpec
 from cabrita.core.resolved import ResolvedCluster
 from cabrita.core.templating import TemplateEngine
@@ -60,7 +61,13 @@ class BastionMedia:
             timeout=1900,
         )
 
-    def _publish_local(self, source: Path, target: str) -> None:
+    def _publish_local(self, source: Path, target: str, cache: ArtifactCache) -> None:
+        cache.directory.mkdir(parents=True, exist_ok=True)
+        key = hashlib.sha256((self.host + target).encode()).hexdigest()
+        with artifact_lock(cache.directory / f"upload-{key}.lock"):
+            self._upload_verified(source, target)
+
+    def _upload_verified(self, source: Path, target: str) -> None:
         with source.open("rb") as stream:
             digest = hashlib.file_digest(stream, "sha256").hexdigest()
         existing = self._remote(["sha256sum", "--", target], check=False)
@@ -73,6 +80,48 @@ class BastionMedia:
             raise ValueError("Uploaded media checksum mismatch")
         self._remote(["mv", "--", partial, target])
 
+    def _materialize(
+        self, artifact: ArtifactSpec, root: str, cache: ArtifactCache
+    ) -> str:
+        base = root + f"/artifacts/{artifact.sha256.lower()}.{artifact.format}"
+        if artifact.source.startswith(("http://", "https://")):
+            partial = base + ".partial"
+            check_base = shlex.join(["sha256sum", "--", base])
+            download = shlex.join(
+                [
+                    "curl",
+                    "--fail",
+                    "--location",
+                    "--retry",
+                    "3",
+                    "--max-time",
+                    "1800",
+                    "--continue-at",
+                    "-",
+                    "--output",
+                    partial,
+                    artifact.source,
+                ]
+            )
+            verify = shlex.join(
+                [
+                    "python3",
+                    "-c",
+                    "import hashlib,sys; f=open(sys.argv[1],'rb'); assert hashlib.file_digest(f,'sha256').hexdigest()==sys.argv[2], 'Checksum mismatch'",
+                    partial,
+                    artifact.sha256.lower(),
+                ]
+            )
+            script = f"if test -f {shlex.quote(base)}; then {check_base}; else {download} && {verify} && {shlex.join(['mv', partial, base])}; fi"
+            self._remote(["flock", "-w", "1800", base + ".lock", "sh", "-c", script])
+            checked = self._remote(["sha256sum", "--", base])
+            if checked.stdout.split()[0] != artifact.sha256.lower():
+                raise ValueError("Cached bastion artifact checksum mismatch")
+        else:
+            artifact.verify(Path(artifact.source))
+            self._publish_local(Path(artifact.source), base, cache)
+        return base
+
     def prepare(
         self, node: NodeSpec, public_key: str, work: Path, cache: ArtifactCache
     ) -> tuple[str, str | None]:
@@ -81,6 +130,7 @@ class BastionMedia:
         if bootstrap.method not in (
             BootstrapMethod.EMBEDDED_KICKSTART,
             BootstrapMethod.OEMDRV,
+            BootstrapMethod.GOLDEN_RESTORE,
         ):
             raise ValueError(
                 f"Unsupported bastion media preparation: {bootstrap.method}"
@@ -121,9 +171,23 @@ class BastionMedia:
                 str(bootstrap.inputs.get("required_free_bytes", 8 * 1024**3)),
             ]
         )
-        kickstart = render_kickstart(
-            self.cluster, node, self.templates, public_key, work
-        )
+        prefix = f"http://{manifest.bastion.http_bind_ip}:{manifest.bastion.http_port}/"
+        if bootstrap.method == BootstrapMethod.GOLDEN_RESTORE:
+            assert bootstrap.payload is not None
+            payload = manifest.artifacts[bootstrap.payload]
+            self._materialize(payload, root, cache)
+            kickstart = render_recovery(
+                self.cluster,
+                node,
+                cache,
+                public_key,
+                work,
+                prefix + f"artifacts/{payload.sha256.lower()}.{payload.format}",
+            )
+        else:
+            kickstart = render_kickstart(
+                self.cluster, node, self.templates, public_key, work
+            )
         key = hashlib.sha256(
             (
                 artifact.sha256
@@ -141,58 +205,26 @@ class BastionMedia:
         )
         if bootstrap.build_on == "local":
             media = prepare_media(
-                self.cluster, node, cache, self.templates, public_key, work
+                self.cluster,
+                node,
+                cache,
+                self.templates,
+                public_key,
+                work,
+                kickstart=kickstart,
             )
-            self._publish_local(media.source, output)
+            self._publish_local(media.source, output, cache)
             if media.auxiliary is not None:
                 assert auxiliary is not None
-                self._publish_local(media.auxiliary, auxiliary)
+                self._publish_local(media.auxiliary, auxiliary, cache)
         else:
-            base = root + f"/artifacts/{artifact.sha256}.iso"
-            if artifact.source.startswith(("http://", "https://")):
-                partial = base + ".partial"
-                check_base = shlex.join(["sha256sum", "--", base])
-                download = shlex.join(
-                    [
-                        "curl",
-                        "--fail",
-                        "--location",
-                        "--retry",
-                        "3",
-                        "--max-time",
-                        "1800",
-                        "--continue-at",
-                        "-",
-                        "--output",
-                        partial,
-                        artifact.source,
-                    ]
-                )
-                verify = shlex.join(
-                    [
-                        "python3",
-                        "-c",
-                        "import hashlib,sys; f=open(sys.argv[1],'rb'); assert hashlib.file_digest(f,'sha256').hexdigest()==sys.argv[2], 'Checksum mismatch'",
-                        partial,
-                        artifact.sha256.lower(),
-                    ]
-                )
-                script = f"if test -f {shlex.quote(base)}; then {check_base}; else {download} && {verify} && {shlex.join(['mv', partial, base])}; fi"
-                self._remote(
-                    ["flock", "-w", "1800", base + ".lock", "sh", "-c", script]
-                )
-                checked = self._remote(["sha256sum", "--", base])
-                if checked.stdout.split()[0] != artifact.sha256.lower():
-                    raise ValueError("Cached bastion ISO checksum mismatch")
-            else:
-                artifact.verify(Path(artifact.source))
-                self._publish_local(Path(artifact.source), base)
+            base = self._materialize(artifact, root, cache)
             builder = Path(iso_builder.__file__)
             script_key = hashlib.sha256(builder.read_bytes()).hexdigest()
             remote_builder = root + f"/artifacts/builder-{script_key}.py"
             remote_ks = root + f"/artifacts/{key}.cfg"
-            self._publish_local(builder, remote_builder)
-            self._publish_local(kickstart, remote_ks)
+            self._publish_local(builder, remote_builder, cache)
+            self._publish_local(kickstart, remote_ks, cache)
             command = ["python3", remote_builder, base, remote_ks, output]
             if auxiliary:
                 command.append("--oemdrv")

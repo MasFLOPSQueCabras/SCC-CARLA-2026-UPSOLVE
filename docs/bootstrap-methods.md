@@ -9,9 +9,11 @@ URLs; every artifact requires a SHA-256 checksum.
 | `cloud-init` | A cloud qcow2 image | Independent overlay and CIDATA ISO |
 | `embedded-kickstart` | Installer ISO | Kickstart embedded in a rebuilt ISO |
 | `oemdrv` | Installer ISO | Installer ISO plus an OEMDRV FAT disk containing Kickstart |
+| `golden-restore` | Installer ISO, compressed raw payload, metadata | Restore ISO fetching a verified payload over HTTP |
 
-Libvirt supports these three methods. Helvetios supports the two installer
-methods. Competition initialization selects `embedded-kickstart`.
+Libvirt supports these methods. Helvetios supports the installer and golden
+recovery methods. Competition initialization selects `embedded-kickstart`.
+See [golden recovery](golden-recovery.md) for capture and restore instructions.
 
 ```yaml
 bootstrap:

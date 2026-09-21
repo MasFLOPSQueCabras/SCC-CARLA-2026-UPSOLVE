@@ -1,13 +1,16 @@
 """Provider operations used by the lifecycle service."""
 
 import json
+import socket
 import subprocess
 import time
-from contextlib import AbstractContextManager
+from collections.abc import Iterator
+from contextlib import ExitStack, contextmanager
 from importlib.resources import files
 from pathlib import Path
 
 from cabrita.bootstrap.artifacts import ArtifactCache
+from cabrita.bootstrap.http_server import EphemeralRangeHTTPServer
 from cabrita.bootstrap.media import prepare_media
 from cabrita.bootstrap.remote import BastionMedia
 from cabrita.core.bootstrap import BootstrapMethod, CustomPreparer
@@ -47,8 +50,26 @@ class ProviderBackend:
             template_paths.insert(0, cluster.manifest.bootstrap.templates)
         self.templates = TemplateEngine(template_paths)
 
-    def installation_session(self) -> AbstractContextManager[None]:
-        return self.provider.deployment_session()
+    @contextmanager
+    def installation_session(self) -> Iterator[None]:
+        with ExitStack() as stack:
+            stack.enter_context(self.provider.deployment_session())
+            if (
+                self.provider.name == "libvirt"
+                and self.cluster.manifest.bootstrap.method
+                == BootstrapMethod.GOLDEN_RESTORE
+            ):
+                host, port = self.cluster.recovery_endpoint()
+                stack.enter_context(
+                    EphemeralRangeHTTPServer(
+                        port=port,
+                        bind_ip=host,
+                        bastion_ssh_host="",
+                        bastion_hostname=socket.gethostname(),
+                        remote_serve_dir=self.artifact_cache.directory,
+                    )
+                )
+            yield
 
     def _reachable(self, node: NodeSpec) -> bool:
         return is_ssh_authenticated(
@@ -106,6 +127,7 @@ class ProviderBackend:
                 BootstrapMethod.CLOUD_INIT
                 | BootstrapMethod.OEMDRV
                 | BootstrapMethod.EMBEDDED_KICKSTART
+                | BootstrapMethod.GOLDEN_RESTORE
             ):
                 media = prepare_media(
                     self.cluster,
@@ -186,6 +208,39 @@ class ProviderBackend:
                 self.provider.post_provision(node.id)
                 finalized = True
             elif reachable:
+                if (
+                    self.cluster.manifest.bootstrap.method
+                    == BootstrapMethod.GOLDEN_RESTORE
+                ):
+                    expected = json.loads(
+                        (self.work_dir / f"node-{node.id}" / "restore.json").read_text()
+                    )["identity"]
+                    command = [
+                        "ssh",
+                        "-o",
+                        "BatchMode=yes",
+                        "-o",
+                        "StrictHostKeyChecking=no",
+                        "-o",
+                        "UserKnownHostsFile=/dev/null",
+                        "-o",
+                        "ConnectTimeout=10",
+                        "-i",
+                        str(self.private_key),
+                    ]
+                    if self.provider.paths.bastion_ssh_host:
+                        command += ["-J", self.provider.paths.bastion_ssh_host]
+                    command += [
+                        f"{self.cluster.manifest.defaults.os.username}@{node.ip}",
+                        "cat /var/lib/cabrita/restored.json",
+                    ]
+                    result = subprocess.run(
+                        command, check=True, capture_output=True, text=True, timeout=30
+                    )
+                    if json.loads(result.stdout) != expected:
+                        raise ValueError(
+                            f"Recovery completion marker mismatch for {node.hostname}"
+                        )
                 return
             time.sleep(min(2, max(0, deadline - time.monotonic())))
         raise TimeoutError(f"SSH verification timed out for {node.hostname}")

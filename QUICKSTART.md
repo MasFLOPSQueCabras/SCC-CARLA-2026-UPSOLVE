@@ -102,25 +102,18 @@ uv run cabrita destroy --yes
 
 ## ⚡ Zero-Install Teardowns (Golden Image Pipeline)
 
-In testing and competitions, reinstalling from the minimal bootable ISO via Anaconda takes **10–15 minutes per node**. To eliminate this bottleneck, `cabrita` implements a **Golden Image & Streaming Pipeline**:
+Capture a configured, shut-down libvirt node into an independent disk and a
+checksum-verified recovery payload. A restore ISO fetches that payload over HTTP,
+applies each node's identity, then boots from disk without reinstalling packages.
 
-### 1. How It Works
-- **First Run**: Install the OS once from the minimal bootable ISO (or automated via Libvirt).
-- **Subsequent Teardowns**:
-  - **Local Libvirt**: When you run `cabrita destroy`, only the ephemeral child CoW overlay (`nodeX.qcow2`) is discarded. On `cabrita up`, a fresh CoW overlay is created on top of `golden-rocky-base.qcow2` in **< 2 seconds**. Zero package re-installations!
-  - **Bare-Metal Streaming**: An optimized raw compressed block image (`golden-rocky-base.raw.zst`, ~1.1 GB) can be streamed directly to block devices (`curl | zstd -d | dd of=/dev/target`) via HTTP in **30–45 seconds**, completely bypassing sequential RPM package installation.
-
-### 2. Image Management Commands
 ```bash
-# List cached ISOs, base cloud images, and golden images
-uv run cabrita image list
-
-# Inspect detailed image virtual size, allocation, and format
-uv run cabrita image inspect ~/.cache/cabrita/images/Rocky-10-GenericCloud-Base.latest.x86_64.qcow2
-
-# Export QCOW2 golden image to compressed raw stream for Bastion HTTP server
-uv run cabrita image export --source ~/.cache/cabrita/golden/golden-rocky-base.qcow2
+cabrita down --cluster cluster.yaml --node 1 --yes
+cabrita image capture --cluster cluster.yaml --node 1 --output ./golden
+cabrita image inspect ./golden/golden.json
 ```
+
+See [golden recovery](docs/golden-recovery.md) for manifest inputs, prerequisites,
+and the separate libvirt and Helvetios verification status.
 
 ---
 
@@ -134,7 +127,7 @@ uv run cabrita image export --source ~/.cache/cabrita/golden/golden-rocky-base.q
 | `cabrita down` | Plan & decommission cluster nodes | `uv run cabrita down` *(interactive)* | `uv run cabrita destroy --yes -n 3` |
 | `cabrita down --dry-run`| Preview teardown plan diff only | `uv run cabrita down --dry-run` | `uv run cabrita down --dry-run --reset-db` |
 | `cabrita init` | Author new cluster workspace | `uv run cabrita init` | `uv run cabrita init -p hw-optimized -d ./my-cluster` |
-| `cabrita image` | Manage golden images & streaming | `uv run cabrita image list` | `uv run cabrita image export -s image.qcow2` |
+| `cabrita image` | Manage golden images & streaming | `uv run cabrita image list` | `cabrita image capture --node 1 --output ./golden` |
 | `cabrita power` | Power control via BMC / Libvirt | `uv run cabrita power on` | `uv run cabrita power reboot -n 2` |
 | `cabrita bios` | Inspect or apply Redfish BIOS profile | `uv run cabrita bios status` | `uv run cabrita bios apply hpc -n 1` |
 | `cabrita configure` | Execute Ansible configuration | `uv run cabrita configure` | `uv run cabrita configure --tags infiniband,nfs` |

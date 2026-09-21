@@ -37,7 +37,7 @@ def test_media_server_reads_ranges_and_rejects_out_of_bounds(tmp_path: Path) -> 
 def test_media_server_stops_when_its_session_ends(tmp_path: Path) -> None:
     import socket
 
-    from cabrita.providers.helvetios.media_server import EphemeralRangeHTTPServer
+    from cabrita.bootstrap.http_server import EphemeralRangeHTTPServer
 
     server = EphemeralRangeHTTPServer(
         port=0,

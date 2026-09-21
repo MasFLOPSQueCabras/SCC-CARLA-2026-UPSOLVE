@@ -307,18 +307,18 @@ uv run cabrita down -a --reset-db
 
 ### 12. Golden Image & Streaming Pipeline (`image`)
 
-Eliminates repeated 15-minute unattended OS installations by caching golden base images and streaming raw disk blocks:
+Capture a configured, shut-down libvirt node into an independent disk and a
+checksum-verified recovery payload. A restore ISO fetches that payload over HTTP,
+applies each node's identity, then boots from disk without reinstalling packages.
 
 ```bash
-# List all cached ISOs, base cloud images, and golden images
-uv run cabrita image list
-
-# Inspect detailed image allocation, virtual size, and format
-uv run cabrita image inspect ~/.cache/cabrita/images/Rocky-10-GenericCloud-Base.latest.x86_64.qcow2
-
-# Export and compress a QCOW2 golden image to .raw.zst for Bastion HTTP streaming
-uv run cabrita image export --source ~/.cache/cabrita/golden/golden-rocky-base.qcow2
+cabrita down --cluster cluster.yaml --node 1 --yes
+cabrita image capture --cluster cluster.yaml --node 1 --output ./golden
+cabrita image inspect ./golden/golden.json
 ```
+
+See [golden recovery](docs/golden-recovery.md) for manifest inputs, prerequisites,
+and the separate libvirt and Helvetios verification status.
 
 ---
 

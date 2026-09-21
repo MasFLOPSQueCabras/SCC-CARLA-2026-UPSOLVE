@@ -24,7 +24,7 @@ class ArtifactSpec(BaseModel):
     model_config = ConfigDict(extra="forbid")
     source: str = Field(min_length=1)
     sha256: str = Field(pattern=r"^[a-fA-F0-9]{64}$")
-    format: Literal["qcow2", "iso", "raw.zst"]
+    format: Literal["qcow2", "iso", "raw.zst", "json"]
 
     def verify(self, path: Path) -> None:
         with path.open("rb") as stream:
@@ -53,6 +53,7 @@ class BootstrapSpec(BaseModel):
     method: BootstrapMethod = BootstrapMethod.CLOUD_INIT
     artifact: str | None = None
     payload: str | None = None
+    metadata: str | None = None
     user_data: Path | None = None
     network_config: Path | None = None
     kickstart: Path | None = None

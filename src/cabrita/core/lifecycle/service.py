@@ -222,6 +222,13 @@ class LifecycleService[BackendT: LifecycleBackend]:
                     f"http://{bastion.http_bind_ip}:{bastion.http_port}".encode()
                 ).hexdigest()
             )
+        if (
+            self.cluster.manifest.provider == "libvirt"
+            and self.cluster.manifest.bootstrap.method == "golden-restore"
+            and operation in ("up", "deploy")
+        ):
+            host, port = self.cluster.recovery_endpoint()
+            keys.append(hashlib.sha256(f"http://{host}:{port}".encode()).hexdigest())
         with self.locks.acquire(keys), ExitStack() as stack:
             plan = self.plan(
                 operation, [node.id for node in nodes], reinstall=reinstall
