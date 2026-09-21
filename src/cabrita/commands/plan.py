@@ -1,6 +1,6 @@
 """Terraform-like cluster execution plan and diff command.
 
-Compares declared cluster manifest configuration (values.yaml / configs/clusters/*.yaml)
+Compares declared cluster manifest configuration (cluster.yaml / configs/clusters/*.yaml)
 against observed live state across hypervisor/BMC, database, and operational locks.
 """
 
@@ -36,7 +36,7 @@ def _locate_cluster_manifest(
     """Finds and parses the target cluster manifest."""
     candidates = [
         cluster_option,
-        Path.cwd() / "values.yaml",
+        Path.cwd() / "cluster.yaml",
     ]
 
     for p in candidates:
@@ -45,7 +45,7 @@ def _locate_cluster_manifest(
             return resolved, load_manifest(resolved)
 
     raise FileNotFoundError(
-        "No cluster manifest or values.yaml found. Run 'cabrita init' or specify '--cluster <path>'."
+        "No cluster manifest or cluster.yaml found. Run 'cabrita init' or specify '--cluster <path>'."
     )
 
 
@@ -276,7 +276,7 @@ def _plan_helvetios_node(
     if prov is not None:
         try:
             pwr = prov.get_power_status(node.id)
-            power_str = pwr.value if hasattr(pwr, "value") else str(pwr)
+            power_str = pwr.value
         except (
             OSError,
             RuntimeError,
@@ -327,7 +327,7 @@ def plan_cli(
         typer.Option(
             "--cluster",
             "-c",
-            help="Path to cluster manifest or values.yaml override file",
+            help="Path to cluster manifest or cluster.yaml override file",
         ),
     ] = None,
 ) -> None:

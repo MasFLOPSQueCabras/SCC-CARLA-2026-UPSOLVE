@@ -3,6 +3,8 @@ from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from cabrita.core.manifest import ClusterManifest
+
 
 class ClusterSettings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -12,9 +14,12 @@ class ClusterSettings(BaseSettings):
         extra="ignore",
     )
 
+    manifest: ClusterManifest | None = None
+
     team_id: int = 72
     bastion_ssh_host: str = "cabrita-bastion"
     bastion_hostname: str = "carlanga"
+    bastion_serve_dir: str = "~/cabrita_serve"
     bastion_http_ip: str = "10.7.12.101"
     bastion_http_port: int = 8072
     gateway_ip: str = "10.2.72.254"
@@ -43,12 +48,22 @@ class ClusterSettings(BaseSettings):
     node_username: str = "scct-2672"
 
     def get_node_ip(self, node_id: int) -> str:
+        if self.manifest is not None:
+            for node in self.manifest.nodes:
+                if node.id == node_id:
+                    return node.ip
+            raise ValueError(f"Undeclared node: {node_id}")
         return f"10.2.{self.team_id}.{node_id}"
 
     def get_bmc_ip(self, node_id: int) -> str:
         return f"10.1.{self.team_id}.{node_id}"
 
     def get_hostname(self, node_id: int) -> str:
+        if self.manifest is not None:
+            for node in self.manifest.nodes:
+                if node.id == node_id:
+                    return node.hostname
+            raise ValueError(f"Undeclared node: {node_id}")
         return f"node{node_id}"
 
 

@@ -204,7 +204,7 @@ def down_cli(
         typer.Option(
             "--cluster",
             "-c",
-            help="Path to cluster manifest or values.yaml override file",
+            help="Path to cluster manifest or cluster.yaml override file",
         ),
     ] = None,
     yes: Annotated[
@@ -230,7 +230,7 @@ def down_cli(
     settings = get_settings()
 
     manifest_file = cluster or (
-        Path.cwd() / "values.yaml" if (Path.cwd() / "values.yaml").exists() else None
+        Path.cwd() / "cluster.yaml" if (Path.cwd() / "cluster.yaml").exists() else None
     )
     if manifest_file and manifest_file.exists():
         manifest = load_manifest(manifest_file)

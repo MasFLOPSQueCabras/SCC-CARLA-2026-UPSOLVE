@@ -4,7 +4,7 @@
 Reads cluster topology, host IPs, roles, and network parameters dynamically from:
 1. CABRITA_CLUSTER_MANIFEST / CABRITA_MANIFEST environment variable
 2. CLI argument --manifest <path>
-3. values.yaml in current working directory or repository root
+3. cluster.yaml in current working directory or repository root
 4. Named cluster config in configs/clusters/${CABRITA_CLUSTER}.yaml
 5. Default cluster config in configs/clusters/helvetios-hpc.yaml (or vm-standard.yaml)
 """
@@ -40,13 +40,13 @@ def _locate_manifest_path(explicit_manifest: str | None = None) -> Path | None:
         if p.exists():
             return p.resolve()
 
-    # Check values.yaml in CWD
-    cwd_values = Path.cwd() / "values.yaml"
+    # Check cluster.yaml in CWD
+    cwd_values = Path.cwd() / "cluster.yaml"
     if cwd_values.exists():
         return cwd_values.resolve()
 
     repo_root = _find_repo_root()
-    repo_values = repo_root / "values.yaml"
+    repo_values = repo_root / "cluster.yaml"
     if repo_values.exists():
         return repo_values.resolve()
 
@@ -203,7 +203,7 @@ def main() -> None:
     )
     parser.add_argument("--host", type=str, help="Get specific host vars")
     parser.add_argument(
-        "--manifest", type=str, help="Explicit path to cluster manifest or values.yaml"
+        "--manifest", type=str, help="Explicit path to cluster manifest or cluster.yaml"
     )
     args = parser.parse_args()
 

@@ -6,7 +6,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from cabrita.core.di import ProviderNotInstalledError, container
+from cabrita.core.di import ProviderNotInstalledError, create_registry
 from cabrita.core.manifest import parse_manifest
 
 console = Console()
@@ -53,7 +53,7 @@ def scaffold_provider(
     target_dir: Path = Path("."),
     force: bool = False,
 ) -> None:
-    """Configures a provider preset into values.yaml and stages templates."""
+    """Configures a provider preset into cluster.yaml and stages templates."""
     target_dir = target_dir.expanduser().resolve()
     target_dir.mkdir(parents=True, exist_ok=True)
 
@@ -63,13 +63,14 @@ def scaffold_provider(
         else ("libvirt" if provider.lower() in ("libvirt", "vm") else provider.lower())
     )
 
+    registry = create_registry()
     try:
-        cls = container.providers.get_provider_class(canon)
+        cls = registry.get_provider_class(canon)
     except ProviderNotInstalledError as e:
         console.print(f"[bold red]Provider error:[/bold red] {e}")
         raise typer.Exit(code=1)
     except ValueError:
-        valid = ", ".join(container.providers.list_providers())
+        valid = ", ".join(registry.list_providers())
         console.print(
             f"[bold red]Unknown provider '{provider}'. Available providers: {valid}[/bold red]"
         )
@@ -101,10 +102,10 @@ def scaffold_provider(
         console.print(f"[bold red]Generated manifest validation failed: {e}[/bold red]")
         raise typer.Exit(code=1)
 
-    values_path = target_dir / "values.yaml"
+    values_path = target_dir / "cluster.yaml"
     if values_path.exists() and not force:
         console.print(
-            f"[yellow]values.yaml already exists at {values_path}, keeping existing. (Use --force to overwrite)[/yellow]"
+            f"[yellow]cluster.yaml already exists at {values_path}, keeping existing. (Use --force to overwrite)[/yellow]"
         )
     else:
         values_path.write_text(yaml_str, encoding="utf-8")
@@ -151,9 +152,10 @@ def list_providers_cli() -> None:
     table.add_column("Status")
     table.add_column("Available Presets")
 
-    for name in container.providers.list_providers():
+    registry = create_registry()
+    for name in registry.list_providers():
         try:
-            cls = container.providers.get_provider_class(name)
+            cls = registry.get_provider_class(name)
             presets = cls.list_presets()
             table.add_row(
                 name, "[bold green]installed[/bold green]", ", ".join(presets)
@@ -218,7 +220,7 @@ def add_provider_cli(
         typer.Option(
             "--force",
             "-f",
-            help="Overwrite existing values.yaml or templates",
+            help="Overwrite existing cluster.yaml or templates",
         ),
     ] = False,
 ) -> None:

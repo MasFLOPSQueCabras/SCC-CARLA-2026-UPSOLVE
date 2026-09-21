@@ -2,9 +2,9 @@ import contextlib
 import importlib.resources as ir
 from collections.abc import Generator
 from pathlib import Path
-from typing import Any
 
-from cabrita.core.di import container
+from cabrita.config import ClusterSettings
+from cabrita.core.di import create_registry
 from cabrita.core.providers.base import NodeProvider, ProviderType
 
 PROVIDER_PACKAGE_MAP: dict[str, str] = {
@@ -37,11 +37,11 @@ def get_provider_templates_dir(provider: str) -> Generator[Path | None]:
 
 
 def get_provider(
-    settings: Any,
+    settings: ClusterSettings,
     provider: ProviderType | str | None = None,
 ) -> NodeProvider:
-    """Factory function resolving a NodeProvider from the DI container."""
-    raw = provider or getattr(settings, "provider", "libvirt")
-    selected_str = str(raw.value if hasattr(raw, "value") else raw)
-
-    return container.providers.get(selected_str, settings=settings)
+    """Construct a provider from the settings resolved by the caller."""
+    selected = settings.provider if provider is None else str(provider)
+    return create_registry().get(
+        selected, settings=settings, manifest=settings.manifest
+    )

@@ -24,7 +24,7 @@ def _merge_defaults(base: dict[str, Any], overrides: dict[str, Any]) -> dict[str
 def interpolate_env_vars(text: str) -> str:
     def _replace(match: re.Match[str]) -> str:
         var_name = match.group(1)
-        default_val = match.group(2) if match.group(2) is not None else ""
+        default_val = match.group(2) or ""
         return os.environ.get(var_name, default_val)
 
     return _ENV_PATTERN.sub(_replace, text)

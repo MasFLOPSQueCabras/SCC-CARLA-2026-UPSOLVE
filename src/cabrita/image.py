@@ -56,7 +56,7 @@ def ensure_cached_cloud_image(
             or cache_path.stat().st_size != file_path.stat().st_size
             or file_path.stat().st_mtime > cache_path.stat().st_mtime
         )
-        if needs_copy and file_path != cache_path:
+        if needs_copy:
             console.print(
                 f"[cyan]Caching cloud image from local file [bold]{file_path}[/bold] into [bold]{cache_path}[/bold]...[/cyan]"
             )
@@ -73,4 +73,4 @@ def ensure_cached_cloud_image(
 def is_qcow2_image(path_or_url: str | Path) -> bool:
     """Returns True if the path or URL indicates a qcow2 cloud image."""
     s = str(path_or_url).lower()
-    return s.endswith(".qcow2") or ".qcow2" in s
+    return ".qcow2" in s

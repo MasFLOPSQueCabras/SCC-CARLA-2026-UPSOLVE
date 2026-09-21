@@ -8,6 +8,7 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+from cabrita.config import ClusterSettings
 from cabrita.core.manifest.models import ClusterManifest, NodeSpec
 from cabrita.core.oemdrv import generate_oemdrv
 from cabrita.core.providers.base import NodeProvider, PowerState, ProviderPaths
@@ -34,46 +35,32 @@ class HelvetiosProvider(NodeProvider):
         http_port: int = 8072,
         http_ip: str = "10.2.72.254",
         template_engine: TemplateEngine | None = None,
-        settings: Any | None = None,
+        settings: ClusterSettings | None = None,
     ) -> None:
         self.manifest = manifest
         self.settings = settings
         self.template_engine = template_engine or TemplateEngine()
 
         if settings is not None:
-            self.bastion_ssh_host = getattr(
-                settings, "bastion_ssh_host", bastion_ssh_host
-            )
-            self.bastion_hostname = getattr(
-                settings, "bastion_hostname", bastion_hostname
-            )
-            self.http_port = getattr(settings, "bastion_http_port", http_port)
-            self.http_ip = getattr(settings, "bastion_http_ip", http_ip)
-            bmc_user = getattr(settings, "bmc_user", bmc_user)
-            bmc_password = getattr(settings, "bmc_password", bmc_password)
-            remote_serve = (
-                getattr(settings, "bastion_serve_dir", None) or "~/cabrita_serve"
-            )
-            gateway = getattr(settings, "gateway_ip", "10.2.72.254")
-            dns = getattr(settings, "dns_ip", "10.2.72.254")
-            state_db = getattr(
-                settings,
-                "bastion_state_db_path",
-                Path.home() / ".config" / "cabrita" / "state.db",
-            )
+            self.bastion_ssh_host = settings.bastion_ssh_host
+            self.bastion_hostname = settings.bastion_hostname
+            self.http_port = settings.bastion_http_port
+            self.http_ip = settings.bastion_http_ip
+            bmc_user = settings.bmc_user
+            bmc_password = settings.bmc_password
+            remote_serve = settings.bastion_serve_dir
+            gateway = settings.gateway_ip
+            dns = settings.dns_ip
+            state_db = settings.bastion_state_db_path
         else:
             self.bastion_ssh_host = (
-                manifest.bastion.ssh_host
-                if (manifest and manifest.bastion)
-                else bastion_ssh_host
+                manifest.bastion.ssh_host if manifest else bastion_ssh_host
             )
             self.bastion_hostname = bastion_hostname
             self.http_port = http_port
             self.http_ip = http_ip
             remote_serve = (
-                manifest.bastion.remote_serve_dir
-                if (manifest and manifest.bastion)
-                else "~/cabrita_serve"
+                manifest.bastion.remote_serve_dir if manifest else "~/cabrita_serve"
             )
             gateway = manifest.network.gateway if manifest else "10.2.72.254"
             dns = manifest.network.dns if manifest else "10.2.72.254"
@@ -258,7 +245,7 @@ class HelvetiosProvider(NodeProvider):
         progress_callback: Callable[[str], None] | None = None,
         **kwargs: Any,
     ) -> bool:
-        te = template_engine or self.template_engine or TemplateEngine()
+        te = template_engine or self.template_engine
         stg = staging_dir or self.paths.staging_dir
         stg.mkdir(parents=True, exist_ok=True)
 

@@ -1,8 +1,7 @@
 from cabrita.core.di import (
-    Container,
     ProviderNotInstalledError,
     ProviderRegistry,
-    container,
+    create_registry,
 )
 from cabrita.core.lifecycle import (
     ClusterContext,
@@ -42,7 +41,6 @@ __all__ = [
     "ClusterContext",
     "ClusterDefaults",
     "ClusterManifest",
-    "Container",
     "DiskSpec",
     "HardwareSpec",
     "HookCallback",
@@ -64,7 +62,7 @@ __all__ = [
     "TaskResult",
     "TemplateEngine",
     "VMSpec",
-    "container",
+    "create_registry",
     "deep_merge",
     "load_manifest",
     "load_values",

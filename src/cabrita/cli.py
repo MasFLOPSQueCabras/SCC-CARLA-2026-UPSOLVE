@@ -57,7 +57,7 @@ app.add_typer(lock_app, name="lock")
 # Register root commands
 app.command(
     "init",
-    help="Initialize a cluster workspace with values.yaml and provider templates",
+    help="Initialize a cluster workspace with cluster.yaml and provider templates",
 )(cluster_init)
 app.command(
     "plan",

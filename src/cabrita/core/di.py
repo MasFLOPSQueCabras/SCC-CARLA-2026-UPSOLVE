@@ -105,7 +105,7 @@ class ProviderRegistry:
                 mod = importlib.import_module(mod_path)
                 cls = getattr(mod, cls_name)
                 return self._invoke_factory(cls, **kwargs)
-            except (ImportError, ModuleNotFoundError) as e:
+            except ImportError as e:
                 raise ProviderNotInstalledError(canon, str(e)) from e
 
         valid = sorted({*self._factories.keys(), *self._lazy_loaders.keys()})
@@ -143,7 +143,7 @@ class ProviderRegistry:
                 match cls:
                     case type() if issubclass(cls, NodeProvider):
                         return cls
-            except (ImportError, ModuleNotFoundError) as e:
+            except ImportError as e:
                 raise ProviderNotInstalledError(canon, str(e)) from e
 
         valid = sorted({*self._factories.keys(), *self._lazy_loaders.keys()})
@@ -156,55 +156,19 @@ class ProviderRegistry:
         return sorted({*self._factories.keys(), *self._lazy_loaders.keys()})
 
 
-class Container:
-    """Lightweight Dependency Injection Container."""
-
-    def __init__(self) -> None:
-        self._services: dict[Any, Any] = {}
-        self.providers = ProviderRegistry()
-
-    def register(self, key: Any, value_or_factory: Any) -> None:
-        """Registers a service singleton or factory."""
-        self._services[key] = value_or_factory
-
-    def resolve[T](self, key: type[T] | Any, default: Any = None) -> T:
-        """Resolves a service from the container."""
-        if key in self._services:
-            val = self._services[key]
-            match val:
-                case type():
-                    return val
-                case _ if callable(val):
-                    return val(self)
-                case _:
-                    return val
-        if default is not None:
-            return default
-        raise KeyError(f"Service '{key}' not registered in container.")
-
-    def has(self, key: Any) -> bool:
-        return key in self._services
-
-
-# Global default container instance
-container = Container()
-
-# Pre-register default lazy providers
-container.providers.register_lazy(
-    name=ProviderType.LIBVIRT.value,
-    module_path="cabrita.providers.libvirt_backend.provider",
-    class_name="LibvirtProvider",
-    aliases=["vm"],
-)
-container.providers.register_lazy(
-    name=ProviderType.HELVETIOS.value,
-    module_path="cabrita.providers.helvetios.provider",
-    class_name="HelvetiosProvider",
-    aliases=["bmc"],
-)
-container.providers.register_lazy(
-    name=ProviderType.CHAMELEON.value,
-    module_path="cabrita.providers.chameleon",
-    class_name="ChameleonProvider",
-    aliases=["chi"],
-)
+def create_registry() -> ProviderRegistry:
+    """Create an independent registry at the application boundary."""
+    registry = ProviderRegistry()
+    registry.register_lazy(
+        name=ProviderType.LIBVIRT.value,
+        module_path="cabrita.providers.libvirt_backend.provider",
+        class_name="LibvirtProvider",
+        aliases=["vm"],
+    )
+    registry.register_lazy(
+        name=ProviderType.HELVETIOS.value,
+        module_path="cabrita.providers.helvetios.provider",
+        class_name="HelvetiosProvider",
+        aliases=["bmc"],
+    )
+    return registry

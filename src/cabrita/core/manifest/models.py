@@ -3,6 +3,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+from cabrita.core.bootstrap import ArtifactSpec, BootstrapSpec, ConfigurationSpec
+
 
 class OSSpec(BaseModel):
     iso_name: str = "Rocky-10.2-x86_64-minimal.iso"
@@ -95,7 +97,7 @@ class ClusterDefaults(BaseModel):
 
 
 class NodeSpec(BaseModel):
-    id: int
+    id: int = Field(gt=0)
     hostname: str
     role: Literal["headnode", "computenode", "storage", "worker"] = "computenode"
     ip: str
@@ -107,9 +109,13 @@ class NodeSpec(BaseModel):
 
 class ClusterManifest(BaseModel):
     schema_version: int = 1
-    name: str
+    name: str = Field(pattern=r"^[a-z][a-z0-9-]{0,47}$")
     provider: Literal["libvirt", "helvetios", "bmc", "chameleon"] = "libvirt"
     description: str = ""
+    bootstrap: BootstrapSpec = Field(default_factory=BootstrapSpec)
+    artifacts: dict[str, ArtifactSpec] = Field(default_factory=dict)
+    configuration: ConfigurationSpec = Field(default_factory=ConfigurationSpec)
+    template_inputs: dict[str, Any] = Field(default_factory=dict)
     network: NetworkSpec = Field(default_factory=NetworkSpec)
     bastion: BastionSpec = Field(default_factory=BastionSpec)
     defaults: ClusterDefaults = Field(default_factory=ClusterDefaults)

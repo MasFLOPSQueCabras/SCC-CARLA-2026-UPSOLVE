@@ -8,6 +8,7 @@ from typing import Any
 
 import libvirt
 
+from cabrita.config import ClusterSettings
 from cabrita.core.manifest.models import ClusterManifest, NodeSpec, VMSpec
 from cabrita.core.oemdrv import generate_oemdrv
 from cabrita.core.providers.base import NodeProvider, PowerState, ProviderPaths
@@ -26,12 +27,12 @@ class LibvirtProvider(NodeProvider):
         uri: str = "qemu:///system",
         storage_dir: Path | None = None,
         template_engine: TemplateEngine | None = None,
-        settings: Any | None = None,
+        settings: ClusterSettings | None = None,
     ) -> None:
         self.manifest = manifest
         self.settings = settings
         if settings is not None:
-            self.uri = getattr(settings, "libvirt_uri", uri)
+            self.uri = settings.libvirt_uri
         else:
             self.uri = uri
         self._conn: libvirt.virConnect | None = None
@@ -47,14 +48,9 @@ class LibvirtProvider(NodeProvider):
             bastion_ssh_host=None,
         )
 
-        resolved_storage = (
-            getattr(settings, "libvirt_storage_dir", None)
-            if settings
-            else self._paths.storage_dir
-        )
-        self.storage_dir = Path(
-            resolved_storage or self._paths.storage_dir or "/var/lib/libvirt/images"
-        )
+        if self._paths.storage_dir is None:
+            raise ValueError("Libvirt requires a storage directory")
+        self.storage_dir = self._paths.storage_dir
         self.template_engine = template_engine or TemplateEngine()
 
     @property
@@ -113,16 +109,12 @@ class LibvirtProvider(NodeProvider):
         yield
 
     def _get_domain_name(self, node_id: int) -> str:
-        prefix = (
-            getattr(self.settings, "libvirt_domain_prefix", "cabrita-")
-            if self.settings
-            else "cabrita-"
-        )
+        if self.manifest is not None:
+            return f"cabrita-{self.manifest.name}-node{node_id}"
+        prefix = self.settings.libvirt_domain_prefix if self.settings else "cabrita-"
         return f"{prefix}node{node_id}"
 
     def _get_domain(self, node_id: int) -> libvirt.virDomain | None:
-        if self.conn is None:
-            return None
         dom_name = self._get_domain_name(node_id)
         try:
             return self.conn.lookupByName(dom_name)
@@ -140,7 +132,7 @@ class LibvirtProvider(NodeProvider):
         spec = self._get_node_spec(node_id)
         if spec:
             return spec.ip
-        if self.settings and hasattr(self.settings, "get_node_ip"):
+        if self.settings is not None:
             return self.settings.get_node_ip(node_id)
         return f"192.168.122.10{node_id}"
 
@@ -208,7 +200,7 @@ class LibvirtProvider(NodeProvider):
         progress_callback: Callable[[str], None] | None = None,
         **kwargs: Any,
     ) -> bool:
-        te = template_engine or self.template_engine or TemplateEngine()
+        te = template_engine or self.template_engine
         stg = staging_dir or self.paths.staging_dir
         stg.mkdir(parents=True, exist_ok=True)
 
@@ -246,9 +238,7 @@ class LibvirtProvider(NodeProvider):
             )
             cloud_name = (
                 self.manifest.defaults.os.cloud_image
-                if self.manifest
-                and self.manifest.defaults
-                and self.manifest.defaults.os.cloud_image
+                if self.manifest and self.manifest.defaults.os.cloud_image
                 else getattr(
                     self.settings,
                     "cloud_image_name",
@@ -258,9 +248,7 @@ class LibvirtProvider(NodeProvider):
             cloud_cand = self.paths.iso_cache_dir.parent / "images" / cloud_name
             iso_name = (
                 self.manifest.defaults.os.iso_name
-                if self.manifest
-                and self.manifest.defaults
-                and self.manifest.defaults.os.iso_name
+                if self.manifest and self.manifest.defaults.os.iso_name
                 else getattr(self.settings, "iso_name", "Rocky-10.2-x86_64-minimal.iso")
             )
             iso_cand = self.paths.iso_cache_dir / iso_name
@@ -295,7 +283,7 @@ class LibvirtProvider(NodeProvider):
             mac_address = spec.mac if spec else f"52:54:00:72:01:0{node_id}"
             username = (
                 self.manifest.defaults.os.username
-                if self.manifest and self.manifest.defaults
+                if self.manifest
                 else (self.settings.node_username if self.settings else "scct-2672")
             )
             hostname = (
@@ -353,7 +341,7 @@ class LibvirtProvider(NodeProvider):
                     ks_cfg_path = stg / f"ks_node{node_id}.cfg"
                     username = (
                         self.manifest.defaults.os.username
-                        if self.manifest and self.manifest.defaults
+                        if self.manifest
                         else (
                             self.settings.node_username
                             if self.settings
@@ -400,12 +388,6 @@ class LibvirtProvider(NodeProvider):
             if self.manifest and self.manifest.network.bridge != "virbr0"
             else None
         )
-        if (
-            self.manifest
-            and hasattr(self.manifest.network, "bridge")
-            and self.manifest.network.bridge.startswith("cabrita")
-        ):
-            net_bridge = self.manifest.network.bridge
 
         domain_context = {
             "domain_name": dom_name,

@@ -70,7 +70,7 @@ def configure_command(
             timeout=45,
         )
 
-    targets = resolve_target_nodes(node) if node is not None else [1, 2, 3]
+    targets = resolve_target_nodes(node)
 
     with get_provider(settings, provider) as prov:
         key_file = Path.home() / ".ssh" / "carla_scc_ed25519"
@@ -144,9 +144,9 @@ def configure_command(
             c_path = Path(cluster)
             if c_path.exists():
                 env["CABRITA_CLUSTER_MANIFEST"] = str(c_path.resolve())
-        elif (Path.cwd() / "values.yaml").exists():
+        elif (Path.cwd() / "cluster.yaml").exists():
             env["CABRITA_CLUSTER_MANIFEST"] = str(
-                (Path.cwd() / "values.yaml").resolve()
+                (Path.cwd() / "cluster.yaml").resolve()
             )
 
         env["ANSIBLE_CONFIG"] = str(cfg_file)
@@ -232,7 +232,7 @@ def configure_cli(
         Path | None,
         typer.Option(
             "--cluster",
-            help="Path to cluster manifest or values.yaml override file",
+            help="Path to cluster manifest or cluster.yaml override file",
         ),
     ] = None,
 ) -> None:
@@ -243,7 +243,7 @@ def configure_cli(
     settings = get_settings()
 
     manifest_file = cluster or (
-        Path.cwd() / "values.yaml" if (Path.cwd() / "values.yaml").exists() else None
+        Path.cwd() / "cluster.yaml" if (Path.cwd() / "cluster.yaml").exists() else None
     )
     if manifest_file and manifest_file.exists():
         manifest = load_manifest(manifest_file)

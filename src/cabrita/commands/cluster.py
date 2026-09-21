@@ -11,7 +11,7 @@ from rich.console import Console
 from rich.table import Table
 
 from cabrita.commands.provider import scaffold_provider
-from cabrita.core.di import container
+from cabrita.core.di import create_registry
 from cabrita.core.manifest import load_manifest, parse_manifest
 
 console = Console()
@@ -182,7 +182,7 @@ def init(
     console.print(
         f"\n[bold green]Cluster workspace initialized successfully in {target_dir}![/bold green]\n"
         f"Provider: [bold]{canon_prov}[/bold] | Profile: [bold]{profile or 'default'}[/bold]\n"
-        f"Customize parameters in [bold]values.yaml[/bold], templates in [bold]templates/[/bold], and recipes in [bold]ansible/[/bold]."
+        f"Customize parameters in [bold]cluster.yaml[/bold], templates in [bold]templates/[/bold], and recipes in [bold]ansible/[/bold]."
     )
 
 
@@ -190,8 +190,8 @@ def init(
 def validate(
     manifest_path: Annotated[
         Path,
-        typer.Argument(help="Path to cluster manifest or values.yaml to validate"),
-    ] = Path("values.yaml"),
+        typer.Argument(help="Path to cluster manifest or cluster.yaml to validate"),
+    ] = Path("cluster.yaml"),
 ) -> None:
     """Validate cluster manifest schema, IP formatting, and resource allocation."""
     path = manifest_path.expanduser().resolve()
@@ -219,9 +219,9 @@ def show(
         typer.Option(
             "--manifest",
             "-m",
-            help="Path to cluster manifest (defaults to values.yaml)",
+            help="Path to cluster manifest (defaults to cluster.yaml)",
         ),
-    ] = Path("values.yaml"),
+    ] = Path("cluster.yaml"),
 ) -> None:
     """Pretty-print declared cluster topology, network parameters, and node sizing."""
     path = manifest_path.expanduser().resolve()
@@ -277,9 +277,10 @@ def list_clusters() -> None:
     table.add_column("Description")
 
     # Inspect registered providers and presets
-    for prov_name in container.providers.list_providers():
+    registry = create_registry()
+    for prov_name in registry.list_providers():
         try:
-            cls = container.providers.get_provider_class(prov_name)
+            cls = registry.get_provider_class(prov_name)
             for preset in cls.list_presets():
                 try:
                     yaml_str = cls.get_preset_config(preset)
@@ -292,12 +293,12 @@ def list_clusters() -> None:
         except Exception:  # noqa: BLE001, S110
             pass
 
-    # Local workspace values.yaml
-    local_val = Path.cwd() / "values.yaml"
+    # Local workspace cluster.yaml
+    local_val = Path.cwd() / "cluster.yaml"
     if local_val.exists():
         with contextlib.suppress(Exception):
             m = load_manifest(local_val)
-            table.add_row("./values.yaml (active)", m.provider, m.description)
+            table.add_row("./cluster.yaml (active)", m.provider, m.description)
 
     console.print(table)
 
