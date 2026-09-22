@@ -9,7 +9,7 @@ import xml.etree.ElementTree as ET
 from functools import partial
 from pathlib import Path
 from typing import Any, Literal
-from uuid import uuid4
+from uuid import uuid7
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -59,7 +59,7 @@ def capture(
     if destination.exists():
         raise FileExistsError(destination)
     destination.parent.mkdir(parents=True, exist_ok=True)
-    work = destination.parent / f".{destination.name}.capture-{uuid4().hex}"
+    work = destination.parent / f".{destination.name}.capture-{uuid7().hex}"
     work.mkdir()
     execute = partial(run, log=work / "capture.log")
     qcow = work / "golden.qcow2"

@@ -27,7 +27,7 @@ def test_stopped_vm_disk_preserved_then_destroyed(
 ) -> None:
     try:
         module = importlib.import_module("cabrita.providers.libvirt_backend.provider")
-        name = f"acceptance-{uuid.uuid4().hex[:12]}"
+        name = f"acceptance-{uuid.uuid7().hex}"
         manifest = parse_manifest(f"""name: {name}
 nodes:
   - {{id: 9, hostname: guest, ip: 192.0.2.9, mac: '52:54:00:00:00:09'}}

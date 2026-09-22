@@ -1,46 +1,25 @@
 ---
-- name: Deploy HPC sysctl configuration to /etc/sysctl.d/99-hpc.conf
-  ansible.builtin.copy:
-    dest: /etc/sysctl.d/99-hpc.conf
-    content: |
-      kernel.numa_balancing = {{ sysctl_numa_balancing }}
-      vm.swappiness = {{ sysctl_swappiness }}
-      vm.dirty_ratio = {{ sysctl_dirty_ratio }}
-      vm.dirty_background_ratio = {{ sysctl_dirty_background_ratio }}
-      vm.zone_reclaim_mode = {{ sysctl_zone_reclaim_mode }}
-    owner: root
-    group: root
-    mode: '0644'
-
-- name: Apply sysctl settings
-  ansible.builtin.command: sysctl --system
-  changed_when: false
-
-- name: Install tuned and tuning profiles
+- name: Apply declared kernel tuning
+  ansible.posix.sysctl:
+    name: '{{ item.key }}'
+    value: '{{ item.value }}'
+    sysctl_file: /etc/sysctl.d/90-cabrita.conf
+    reload: true
+  loop: '{{ sysctl | dict2items }}'
+- name: Install tuned
   ansible.builtin.dnf:
-    name:
-      - tuned
-      - tuned-profiles-cpu-partitioning
+    name: tuned
     state: present
-
-- name: Ensure tuned service is started and enabled
+- name: Start tuned
   ansible.builtin.systemd_service:
     name: tuned
     state: started
     enabled: true
-
-- name: Check current active tuned profile
+- name: Read the active tuning profile
   ansible.builtin.command: tuned-adm active
-  register: tuned_active
+  register: active_tuning
   changed_when: false
-
-- name: Activate throughput-performance tuned profile
-  ansible.builtin.command: tuned-adm profile throughput-performance
-  when: "'throughput-performance' not in tuned_active.stdout"
-
-- name: Enable Transparent Huge Pages (madvise)
-  ansible.builtin.shell: |
-    if [ -f /sys/kernel/mm/transparent_hugepage/enabled ]; then
-      echo madvise > /sys/kernel/mm/transparent_hugepage/enabled
-    fi
-  changed_when: false
+- name: Apply the declared profile
+  ansible.builtin.command:
+    argv: [tuned-adm, profile, '{{ tuned_profile }}']
+  when: tuned_profile not in active_tuning.stdout

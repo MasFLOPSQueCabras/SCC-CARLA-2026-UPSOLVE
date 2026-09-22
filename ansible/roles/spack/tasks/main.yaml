@@ -1,45 +1,54 @@
 ---
-- name: Clone Spack repository to shared storage
+- name: Install Spack build prerequisites
+  ansible.builtin.dnf:
+    name: [git, gcc, gcc-c++, gcc-gfortran, make, patch, tar, gzip, bzip2, xz, unzip, findutils, diffutils]
+    state: present
+- name: Clone the pinned Spack implementation and package recipes
   ansible.builtin.git:
-    repo: "{{ spack_repo_url }}"
-    dest: "{{ spack_root }}"
-    version: "{{ spack_branch }}"
-    depth: 1
-  become: true
-  become_user: "{{ cluster_user }}"
-  when: inventory_hostname == nfs_server_host
-
-- name: Deploy Spack shell profile to /etc/profile.d/spack.sh
-  ansible.builtin.copy:
-    dest: /etc/profile.d/spack.sh
-    content: |
-      export SPACK_ROOT={{ spack_root }}
-      if [ -f "$SPACK_ROOT/share/spack/setup-env.sh" ]; then
-          source "$SPACK_ROOT/share/spack/setup-env.sh"
-      fi
-    owner: root
-    group: root
+    repo: https://github.com/spack/spack.git
+    dest: '{{ nfs_mount_dir }}/spack'
+    version: 2bfcc69fa870d3c6919be87593f22647981b648a
+  become_user: '{{ cluster_user }}'
+- name: Create the software environment directory
+  ansible.builtin.file:
+    path: '{{ nfs_mount_dir }}/environment'
+    state: directory
+    owner: '{{ cluster_user }}'
+    group: '{{ cluster_user }}'
+    mode: '0755'
+- name: Write the pinned software specification
+  ansible.builtin.template:
+    src: spack.yaml.j2
+    dest: '{{ nfs_mount_dir }}/environment/spack.yaml'
+    owner: '{{ cluster_user }}'
+    group: '{{ cluster_user }}'
     mode: '0644'
-
-- name: Auto-detect compilers in Spack on node1
-  ansible.builtin.shell: |
-    source {{ spack_root }}/share/spack/setup-env.sh
-    spack compiler find
-  args:
-    executable: /bin/bash
-  become: true
-  become_user: "{{ cluster_user }}"
-  when: inventory_hostname == nfs_server_host
-  changed_when: false
-
-- name: Auto-detect external system packages in Spack on node1
-  ansible.builtin.shell: |
-    source {{ spack_root }}/share/spack/setup-env.sh
-    spack external find --scope=site
-    spack external find --scope=site hwloc openssl
-  args:
-    executable: /bin/bash
-  become: true
-  become_user: "{{ cluster_user }}"
-  when: inventory_hostname == nfs_server_host
-  changed_when: false
+  register: spack_specification
+- name: Discover the installed compiler once
+  ansible.builtin.command:
+    argv: ['{{ nfs_mount_dir }}/spack/bin/spack', compiler, find, --scope, site]
+    creates: '{{ nfs_mount_dir }}/environment/.compiler-ready'
+  become_user: '{{ cluster_user }}'
+  register: compiler_discovery
+- name: Record compiler discovery
+  ansible.builtin.copy:
+    dest: '{{ nfs_mount_dir }}/environment/.compiler-ready'
+    content: ready
+    owner: '{{ cluster_user }}'
+    group: '{{ cluster_user }}'
+    mode: '0644'
+  when: compiler_discovery.changed
+- name: Check for the installed environment
+  ansible.builtin.stat:
+    path: '{{ nfs_mount_dir }}/environment/view/bin/xhpl'
+  register: installed_environment
+- name: Concretize changed or missing software
+  ansible.builtin.command:
+    argv: ['{{ nfs_mount_dir }}/spack/bin/spack', -e, '{{ nfs_mount_dir }}/environment', concretize, --force]
+  become_user: '{{ cluster_user }}'
+  when: spack_specification.changed or not installed_environment.stat.exists
+- name: Install changed or missing software
+  ansible.builtin.command:
+    argv: ['{{ nfs_mount_dir }}/spack/bin/spack', -e, '{{ nfs_mount_dir }}/environment', install, '-j{{ build_jobs }}']
+  become_user: '{{ cluster_user }}'
+  when: spack_specification.changed or not installed_environment.stat.exists

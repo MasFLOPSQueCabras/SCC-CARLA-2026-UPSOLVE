@@ -1,40 +1,25 @@
 ---
-- name: Install NFS client utilities
-  ansible.builtin.dnf:
-    name:
-      - nfs-utils
-    state: present
-
-- name: Create /shared directory on client nodes
+- name: Inspect the shared path
+  ansible.builtin.stat:
+    path: '{{ nfs_mount_dir }}'
+    follow: false
+  register: shared_path
+- name: Remove the source server's symlink on restored clients
   ansible.builtin.file:
-    path: "{{ nfs_mount_dir }}"
-    state: directory
-    owner: "{{ cluster_user }}"
-    group: "{{ cluster_user }}"
-    mode: '0777'
-  when: inventory_hostname != nfs_server_host
-
-- name: Mount /shared from NFS server over InfiniBand
-  ansible.posix.mount:
-    path: "{{ nfs_mount_dir }}"
-    src: "{{ nfs_server_ib_ip }}:{{ nfs_export_dir }}"
-    fstype: nfs
-    opts: "{{ nfs_mount_options }}"
-    state: mounted
-  when: inventory_hostname != nfs_server_host
-
-- name: Ensure /shared symlink exists on NFS server node
+    path: '{{ nfs_mount_dir }}'
+    state: absent
+  when: inventory_hostname != nfs_server_host and shared_path.stat.islnk | default(false)
+- name: Link the shared path on the server
   ansible.builtin.file:
-    src: "{{ nfs_export_dir }}"
-    dest: "{{ nfs_mount_dir }}"
+    src: '{{ nfs_export_dir }}'
+    dest: '{{ nfs_mount_dir }}'
     state: link
-    force: true
   when: inventory_hostname == nfs_server_host
-
-- name: Ensure export dir symlink exists on client nodes for identical RPATH
-  ansible.builtin.file:
-    src: "{{ nfs_mount_dir }}"
-    dest: "{{ nfs_export_dir }}"
-    state: link
-    force: true
+- name: Mount the declared server on clients
+  ansible.posix.mount:
+    path: '{{ nfs_mount_dir }}'
+    src: '{{ nfs_server_address }}:{{ nfs_export_dir }}'
+    fstype: nfs
+    opts: '{{ nfs_mount_options }}'
+    state: mounted
   when: inventory_hostname != nfs_server_host

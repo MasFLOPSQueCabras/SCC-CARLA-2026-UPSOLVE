@@ -1,68 +1,50 @@
 ---
-- name: Install InfiniBand diagnostic and benchmark packages
+- name: Require the declared InfiniBand interface
+  ansible.builtin.assert:
+    that: ib_interface in ansible_facts.interfaces
+    fail_msg: 'Required InfiniBand interface {{ ib_interface }} is missing'
+- name: Install InfiniBand tooling
   ansible.builtin.dnf:
-    name:
-      - rdma-core
-      - infiniband-diags
-      - libibverbs-utils
-      - perftest
+    name: [rdma-core, infiniband-diags, libibverbs-utils, perftest]
     state: present
-
-- name: Configure RDMA memory locking limits in /etc/security/limits.d/99-rdma.conf
+- name: Permit RDMA memory locking
   ansible.builtin.copy:
-    dest: /etc/security/limits.d/99-rdma.conf
-    content: |
-      * soft memlock unlimited
-      * hard memlock unlimited
-      * soft stack 32768
-      * hard stack 32768
-    owner: root
-    group: root
+    dest: /etc/security/limits.d/90-cabrita-rdma.conf
     mode: '0644'
-
-- name: Check if InfiniBand hardware interface exists
-  ansible.builtin.set_fact:
-    has_ib_interface: "{{ ib_interface in ansible_facts['interfaces'] }}"
-
-- name: Check existing NetworkManager connections
-  ansible.builtin.command: nmcli -g NAME con show
-  register: nmcli_con_show
+    content: |
+      {{ cluster_user }} soft memlock unlimited
+      {{ cluster_user }} hard memlock unlimited
+- name: Write the declared InfiniBand connection
+  ansible.builtin.copy:
+    dest: /etc/NetworkManager/system-connections/cabrita-ib.nmconnection
+    mode: '0600'
+    content: |
+      [connection]
+      id=cabrita-ib
+      type=infiniband
+      interface-name={{ ib_interface }}
+      [infiniband]
+      transport-mode=datagram
+      [ipv4]
+      method=manual
+      address1={{ cluster_addresses[inventory_hostname] }}/{{ ib_prefix }}
+      [ipv6]
+      method=disabled
+  register: ib_connection
+- name: Reload changed network connections
+  ansible.builtin.command: nmcli connection reload
+  when: ib_connection.changed
+- name: Read the InfiniBand connection state
+  ansible.builtin.command:
+    argv: [nmcli, -g, GENERAL.STATE, device, show, '{{ ib_interface }}']
+  register: ib_state
   changed_when: false
-  when: has_ib_interface
-
-- name: Create NetworkManager connection for InfiniBand if missing
-  ansible.builtin.command: >
-    nmcli con add type infiniband con-name {{ ib_interface }} ifname {{ ib_interface }} ip4 {{ ib_ip }}/{{ ib_subnet_cidr }} autoconnect yes
-  when: has_ib_interface and (nmcli_con_show.stdout_lines is defined) and (ib_interface not in nmcli_con_show.stdout_lines)
-
-- name: Ensure static IP and autoconnect on InfiniBand interface
-  ansible.builtin.command: >
-    nmcli con mod {{ ib_interface }} ipv4.addresses {{ ib_ip }}/{{ ib_subnet_cidr }} ipv4.method manual autoconnect yes
+- name: Activate InfiniBand
+  ansible.builtin.command: nmcli connection up cabrita-ib
+  when: ib_connection.changed or '100 (connected)' not in ib_state.stdout
+- name: Verify the declared fabric port
+  ansible.builtin.command:
+    argv: [ibstat, '{{ ucx_device.split(":")[0] }}', '{{ ucx_device.split(":")[1] }}']
+  register: fabric
   changed_when: false
-  when: has_ib_interface
-
-- name: Check InfiniBand device connection state
-  ansible.builtin.command: nmcli -g GENERAL.STATE dev show {{ ib_interface }}
-  register: ib_dev_state
-  changed_when: false
-  when: has_ib_interface
-
-- name: Ensure InfiniBand connection is activated
-  ansible.builtin.command: nmcli con up {{ ib_interface }}
-  when: has_ib_interface and (ib_dev_state.stdout is defined) and ('100 (connected)' not in ib_dev_state.stdout)
-
-- name: Assign InfiniBand interface to trusted firewalld zone
-  ansible.posix.firewalld:
-    zone: trusted
-    interface: "{{ ib_interface }}"
-    permanent: true
-    state: enabled
-    immediate: true
-  when: has_ib_interface
-
-- name: Verify InfiniBand mlx5_0 port status
-  ansible.builtin.command: ibstat mlx5_0 1
-  register: ibstat_out
-  changed_when: false
-  failed_when: "'State: Active' not in ibstat_out.stdout"
-  when: has_ib_interface
+  failed_when: "fabric.rc != 0 or 'State: Active' not in fabric.stdout"

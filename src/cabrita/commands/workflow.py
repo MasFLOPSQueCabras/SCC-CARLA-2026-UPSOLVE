@@ -126,9 +126,10 @@ def init(
             "format": "qcow2" if provider == "libvirt" else "iso",
         }
     }
-    document["configuration"] = {
-        "profile": "none" if provider == "libvirt" else "scc-carla-2026"
-    }
+    document.setdefault(
+        "configuration",
+        {"profile": "none" if provider == "libvirt" else "scc-carla-2026"},
+    )
     directory.mkdir(parents=True, exist_ok=True)
     destination.write_text(yaml.safe_dump(document, sort_keys=False))
     shutil.copytree(

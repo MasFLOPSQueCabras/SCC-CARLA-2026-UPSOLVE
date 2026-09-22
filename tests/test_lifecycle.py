@@ -49,6 +49,41 @@ class Backend:
         del self.nodes[node.id]
 
 
+@pytest.mark.parametrize("client_failure", [False, True])
+def test_hpc_shutdown_keeps_storage_until_clients_stop(
+    service: LifecycleService[Backend],
+    monkeypatch: pytest.MonkeyPatch,
+    client_failure: bool,
+) -> None:
+    service.cluster.manifest.configuration.profile = "lightweight"
+    service = LifecycleService(
+        ResolvedCluster(service.cluster.source, service.cluster.manifest),
+        service.backend,
+        service.state,
+        service.locks,
+    )
+    service.execute("up")
+    stopped = []
+    stop = service.backend.stop
+
+    def record(node):
+        stopped.append(node.id)
+        if node.id == 8 and client_failure:
+            raise TimeoutError("Client did not stop")
+        stop(node)
+
+    monkeypatch.setattr(service.backend, "stop", record)
+    if client_failure:
+        with pytest.raises(ExceptionGroup):
+            service.execute("down")
+        assert stopped == [8]
+        assert service.backend.nodes[7].running
+    else:
+        service.execute("down")
+        assert stopped == [8, 7]
+        assert not any(node.running for node in service.backend.nodes.values())
+
+
 @pytest.fixture
 def service(tmp_path: Path) -> LifecycleService[Backend]:
     manifest = parse_manifest("""name: test

@@ -1,6 +1,3 @@
-# SCC@CARLA 3-Node MPI Cluster Hostfile
-# Dual-socket Intel Xeon Gold 6140 (18 cores/socket = 36 cores/node)
-# Process binding: 1 MPI process per physical core, total 108 slots
 {% for host in groups['cluster'] %}
-{{ hostvars[host]['ib_ip'] }} slots=36
+{{ cluster_addresses[host] }} slots={{ ranks_per_node }}
 {% endfor %}

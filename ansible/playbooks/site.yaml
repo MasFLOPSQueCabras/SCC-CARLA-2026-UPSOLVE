@@ -1,59 +1,25 @@
 ---
-# Play 1: Node-Independent Setup
-# Configures base OS, packages, InfiniBand, kernel tuning, and storage.
-# This play can run on any individual node or in parallel across all available nodes.
-- name: Node-Independent Setup
+- name: Configure the complete declared cluster
   hosts: cluster
   become: true
-  tags:
-    - node_independent
-    - independent
+  any_errors_fatal: true
   roles:
-    - role: common
-      tags: ["common", "node_independent"]
+    - common
     - role: infiniband
-      tags: ["infiniband", "node_independent"]
+      when: transport == 'ucx'
     - role: hpc_tune
-      tags: ["hpc_tune", "node_independent"]
-    - role: nfs_server
-      when: inventory_hostname == nfs_server_host
-      tags: ["nfs", "nfs_server", "node_independent"]
-    - role: nfs_client
-      tags: ["nfs", "nfs_client", "node_independent"]
+      when: tuning
+    - cluster_ssh
+    - nfs_server
+    - nfs_client
     - role: spack
-      when: inventory_hostname == nfs_server_host
-      tags: ["spack", "node_independent"]
+      when: software == 'spack' and inventory_hostname == nfs_server_host
     - role: hpl
       when: inventory_hostname == nfs_server_host
-      tags: ["hpl", "node_independent"]
-
-# Play 2: Cluster-Wide Coordinated Setup
-# Distributes cluster SSH keys, configures the multi-node MPI hostfile,
-# and verifies end-to-end InfiniBand fabric reachability.
-# Requires all target cluster nodes to be online.
-- name: Cluster-Wide Coordinated Setup
-  hosts: cluster
-  become: true
-  tags:
-    - cluster_coordination
-    - coordination
-  roles:
-    - role: cluster_ssh
-      tags: ["cluster_ssh", "cluster_coordination"]
   tasks:
-    - name: Deploy cluster MPI hostfile for HPL
-      ansible.builtin.template:
-        src: "{{ playbook_dir }}/../roles/hpl/templates/mpi_hosts.j2"
-        dest: "{{ nfs_mount_dir }}/hpl/hosts"
-        owner: "{{ cluster_user }}"
-        group: "{{ cluster_user }}"
-        mode: '0644'
-      when: inventory_hostname == nfs_server_host
-      tags: ["mpi", "cluster_coordination"]
-
-    - name: Verify InfiniBand network reachability to cluster peers
-      ansible.builtin.command: "ping -c 2 -W 1 {{ hostvars[item]['ib_ip'] }}"
-      loop: "{{ groups['cluster'] }}"
+    - name: Check transport reachability between every pair of nodes
+      ansible.builtin.command:
+        argv: [ping, -c, '1', -W, '3', '{{ cluster_addresses[item] }}']
+      loop: '{{ groups["cluster"] }}'
       when: item != inventory_hostname
       changed_when: false
-      tags: ["infiniband", "cluster_coordination"]

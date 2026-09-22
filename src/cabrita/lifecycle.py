@@ -1,6 +1,7 @@
 """Provider operations used by the lifecycle service."""
 
 import json
+import os
 import socket
 import subprocess
 import time
@@ -249,6 +250,13 @@ class ProviderBackend:
         configuration = self.cluster.manifest.configuration
         if configuration.profile == "none":
             return
+        variables = configuration.inputs
+        if self.cluster.hpc is not None:
+            if {node.id for node in nodes} != {
+                node.id for node in self.cluster.nodes()
+            }:
+                raise ValueError("Shared HPC configuration requires all declared nodes")
+            variables = self.cluster.hpc.variables(self.cluster.manifest)
         playbook = configuration.playbook
         if playbook is None:
             playbook = Path(
@@ -261,7 +269,7 @@ class ProviderBackend:
                 "ansible_host": node.ip,
                 "ansible_user": self.cluster.manifest.defaults.os.username,
                 "ansible_ssh_private_key_file": str(self.private_key),
-                "ansible_ssh_common_args": "-o StrictHostKeyChecking=accept-new"
+                "ansible_ssh_common_args": "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
                 + (
                     f" -J {self.cluster.manifest.bastion.ssh_host}"
                     if self.provider.name == "helvetios"
@@ -272,7 +280,13 @@ class ProviderBackend:
         }
         inventory.write_text(
             json.dumps(
-                {"all": {"hosts": host_vars, "vars": configuration.inputs}}, indent=2
+                {
+                    "all": {
+                        "children": {"cluster": {"hosts": host_vars}},
+                        "vars": variables,
+                    }
+                },
+                indent=2,
             )
         )
         with (self.work_dir / "configure.log").open("w") as log:
@@ -282,6 +296,15 @@ class ProviderBackend:
                 stderr=subprocess.STDOUT,
                 check=True,
                 timeout=self.timeout,
+                env={
+                    **os.environ,
+                    "ANSIBLE_CONFIG": str(
+                        files("cabrita").joinpath("ansible/ansible.cfg")
+                    ),
+                    "ANSIBLE_ROLES_PATH": str(
+                        files("cabrita").joinpath("ansible/roles")
+                    ),
+                },
             )
 
     def stop(self, node: NodeSpec) -> None:

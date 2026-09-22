@@ -156,7 +156,7 @@ def test_capture_destroy_and_restore_independent_nodes(
                 timeout=30,
             )
         base = {
-            "name": "golden-source-" + uuid.uuid4().hex[:8],
+            "name": "golden-source-" + uuid.uuid7().hex,
             "provider": "libvirt",
             "access": {
                 "public_key": str(root / "old-key.pub"),
@@ -255,7 +255,7 @@ sudo systemctl daemon-reload && sudo systemctl enable --now cabrita-golden.servi
         original.execute("destroy")
         assert not disk.exists()
         assert (root / "golden/golden.qcow2").is_file()
-        base["name"] = "golden-restored-" + uuid.uuid4().hex[:8]
+        base["name"] = "golden-restored-" + uuid.uuid7().hex
         base["access"].update(
             public_key=str(root / "key.pub"), private_key=str(root / "key")
         )

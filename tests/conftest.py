@@ -1,5 +1,5 @@
 from pathlib import Path
-from uuid import uuid4
+from uuid import uuid7
 
 import pytest
 
@@ -52,7 +52,7 @@ def e2e_log_dir(request: pytest.FixtureRequest) -> Path:
     path = (
         Path(request.config.getoption("--e2e-log-dir"))
         / request.node.name
-        / uuid4().hex[:10]
+        / uuid7().hex
     )
     path.mkdir(parents=True, exist_ok=True)
     return path

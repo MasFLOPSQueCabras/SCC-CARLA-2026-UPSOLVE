@@ -1,22 +1,24 @@
 ---
-- name: Verify InfiniBand Fabric and Inter-Node RDMA
+- name: Verify declared InfiniBand fabric and peer connectivity
   hosts: cluster
   gather_facts: false
-  become: false
+  any_errors_fatal: true
   tasks:
-    - name: Ping all cluster peers over IPoIB
-      ansible.builtin.command: ping -c 3 {{ hostvars[item]['ib_ip'] }}
-      loop: "{{ ansible_play_hosts }}"
-      when:
-        - item != inventory_hostname
-        - hostvars[item]['ib_ip'] is defined
-      register: ping_results
+    - name: Require complete InfiniBand configuration
+      ansible.builtin.assert:
+        that:
+          - transport | default('') == 'ucx'
+          - cluster_addresses | default({}) | list | sort == groups['cluster'] | sort
+        fail_msg: Supply the resolved UCX inventory for every declared node
+    - name: Require an active fabric port
+      ansible.builtin.command:
+        argv: [ibstat, '{{ ucx_device.split(":")[0] }}', '{{ ucx_device.split(":")[1] }}']
+      register: fabric
       changed_when: false
-
-    - name: Display ping summary
-      ansible.builtin.debug:
-        msg: >-
-          {{ inventory_hostname }} -> {{ item.item }} ({{ hostvars[item.item]['ib_ip'] }}):
-          {{ item.stdout_lines[-1] }}
-      loop: "{{ ping_results.results }}"
-      when: item.skipped is not defined or not item.skipped
+      failed_when: "fabric.rc != 0 or 'State: Active' not in fabric.stdout"
+    - name: Verify connectivity to every declared peer
+      ansible.builtin.command:
+        argv: [ping, -c, '3', -W, '3', '{{ cluster_addresses[item] }}']
+      loop: '{{ groups["cluster"] }}'
+      when: item != inventory_hostname
+      changed_when: false

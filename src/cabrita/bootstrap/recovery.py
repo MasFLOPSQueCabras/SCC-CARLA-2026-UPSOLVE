@@ -5,7 +5,7 @@ import json
 import platform
 from ipaddress import ip_address, ip_network
 from pathlib import Path
-from uuid import uuid4
+from uuid import uuid7
 
 from cabrita.bootstrap import restore_runtime
 from cabrita.bootstrap.artifacts import ArtifactCache
@@ -58,7 +58,7 @@ def render_recovery(
         )
     )
     identity = {
-        "token": uuid4().hex,
+        "token": uuid7().hex,
         "hostname": node.hostname,
         "username": cluster.manifest.defaults.os.username,
         "public_key": public_key,

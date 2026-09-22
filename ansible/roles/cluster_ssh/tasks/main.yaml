@@ -1,64 +1,35 @@
 ---
-- name: Ensure .ssh directory exists for cluster user
+- name: Create the cluster user's SSH directory
   ansible.builtin.file:
-    path: "{{ cluster_user_home }}/.ssh"
+    path: '{{ cluster_user_home }}/.ssh'
     state: directory
-    owner: "{{ cluster_user }}"
-    group: "{{ cluster_user }}"
+    owner: '{{ cluster_user }}'
+    group: '{{ cluster_user }}'
     mode: '0700'
-
-- name: Generate cluster ED25519 keypair on node1
-  ansible.builtin.command: >
-    ssh-keygen -t ed25519 -N "" -f {{ cluster_user_home }}/.ssh/id_ed25519 -C "cluster-internal"
-  args:
-    creates: "{{ cluster_user_home }}/.ssh/id_ed25519"
-  become_user: "{{ cluster_user }}"
-  when: inventory_hostname == nfs_server_host
-
-- name: Read cluster public key from node1
+- name: Generate a distinct internal SSH key on each node
+  ansible.builtin.command:
+    argv: [ssh-keygen, -t, ed25519, -N, '', -f, '{{ cluster_user_home }}/.ssh/id_ed25519']
+    creates: '{{ cluster_user_home }}/.ssh/id_ed25519'
+  become_user: '{{ cluster_user }}'
+- name: Read each node's public key
   ansible.builtin.slurp:
-    src: "{{ cluster_user_home }}/.ssh/id_ed25519.pub"
-  register: cluster_pubkey_raw
-  delegate_to: "{{ nfs_server_host }}"
-  run_once: true
-
-- name: Read cluster private key from node1
-  ansible.builtin.slurp:
-    src: "{{ cluster_user_home }}/.ssh/id_ed25519"
-  register: cluster_privkey_raw
-  delegate_to: "{{ nfs_server_host }}"
-  run_once: true
-
-- name: Distribute cluster public key to authorized_keys across all nodes
+    src: '{{ cluster_user_home }}/.ssh/id_ed25519.pub'
+  register: internal_public_key
+- name: Authorize declared peer keys without distributing private keys
   ansible.posix.authorized_key:
-    user: "{{ cluster_user }}"
+    user: '{{ cluster_user }}'
+    key: '{{ hostvars[item].internal_public_key.content | b64decode }}'
     state: present
-    key: "{{ cluster_pubkey_raw.content | b64decode }}"
-
-- name: Distribute cluster private key across all nodes
+  loop: '{{ groups["cluster"] }}'
+- name: Configure SSH for declared cluster peers
   ansible.builtin.copy:
-    dest: "{{ cluster_user_home }}/.ssh/id_ed25519"
-    content: "{{ cluster_privkey_raw.content | b64decode }}"
-    owner: "{{ cluster_user }}"
-    group: "{{ cluster_user }}"
+    dest: '{{ cluster_user_home }}/.ssh/config'
+    owner: '{{ cluster_user }}'
+    group: '{{ cluster_user }}'
     mode: '0600'
-
-- name: Distribute cluster public key file across all nodes
-  ansible.builtin.copy:
-    dest: "{{ cluster_user_home }}/.ssh/id_ed25519.pub"
-    content: "{{ cluster_pubkey_raw.content | b64decode }}"
-    owner: "{{ cluster_user }}"
-    group: "{{ cluster_user }}"
-    mode: '0644'
-
-- name: Configure SSH client config for cluster user
-  ansible.builtin.copy:
-    dest: "{{ cluster_user_home }}/.ssh/config"
     content: |
-      Host *
+      Host {{ groups['cluster'] | join(' ') }} {{ cluster_addresses.values() | join(' ') }}
+          BatchMode yes
           StrictHostKeyChecking no
           UserKnownHostsFile /dev/null
-          LogLevel ERROR
-    owner: "{{ cluster_user }}"
-    group: "{{ cluster_user }}"
-    mode: '0600'
+          IdentityFile {{ cluster_user_home }}/.ssh/id_ed25519

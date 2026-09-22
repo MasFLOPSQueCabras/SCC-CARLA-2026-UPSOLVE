@@ -3,8 +3,18 @@ name: helvetios-hpc
 provider: helvetios
 description: "Helvetios SCC@CARLA 3-node baremetal HPC cluster on HPE ProLiant DL385"
 
+configuration:
+  profile: scc-carla-2026
+  inputs:
+    ib_interface: ib0
+    ib_prefix: 16
+    ib_addresses:
+      node1: "10.148.0.1"
+      node2: "10.148.0.2"
+      node3: "10.148.0.3"
+
 network:
-  domain: scc.local
+  domain: cabrita.local
   subnet: "10.2.72.0/24"
   gateway: "10.2.72.254"
   dns: "10.2.72.254"

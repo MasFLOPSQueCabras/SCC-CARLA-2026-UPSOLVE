@@ -1,12 +1,13 @@
 """Resolve a manifest once at the application boundary."""
 
 import hashlib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from ipaddress import ip_address
 from pathlib import Path
 from urllib.parse import urlparse
 
 from cabrita.core.bootstrap import BootstrapMethod
+from cabrita.core.hpc import HPCSettings
 from cabrita.core.manifest import ClusterManifest, NodeSpec, load_manifest
 
 
@@ -14,6 +15,16 @@ from cabrita.core.manifest import ClusterManifest, NodeSpec, load_manifest
 class ResolvedCluster:
     source: Path
     manifest: ClusterManifest
+    hpc: HPCSettings | None = field(init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "hpc",
+            HPCSettings.resolve(self.manifest)
+            if self.manifest.configuration.profile in ("lightweight", "scc-carla-2026")
+            else None,
+        )
 
     @classmethod
     def load(cls, source: Path) -> ResolvedCluster:
@@ -26,15 +37,15 @@ class ResolvedCluster:
                     .expanduser()
                     .resolve()
                 )
-        for field in ("public_key", "private_key"):
-            value = getattr(manifest.access, field).expanduser()
-            setattr(manifest.access, field, (source.parent / value).resolve())
+        for attribute in ("public_key", "private_key"):
+            value = getattr(manifest.access, attribute).expanduser()
+            setattr(manifest.access, attribute, (source.parent / value).resolve())
         bootstrap = manifest.bootstrap
-        for field in ("user_data", "network_config", "kickstart", "templates"):
-            value = getattr(bootstrap, field)
+        for attribute in ("user_data", "network_config", "kickstart", "templates"):
+            value = getattr(bootstrap, attribute)
             if value is not None:
                 setattr(
-                    bootstrap, field, (source.parent / value).expanduser().resolve()
+                    bootstrap, attribute, (source.parent / value).expanduser().resolve()
                 )
         if bootstrap.prepare and bootstrap.prepare.execution == "local":
             executable = bootstrap.prepare.argv[0]

@@ -66,7 +66,7 @@ def test_unattended_bootstrap(
             timeout=30,
         )
         document = {
-            "name": f"acceptance-{uuid.uuid4().hex[:10]}",
+            "name": f"acceptance-{uuid.uuid7().hex}",
             "provider": "libvirt",
             "access": {
                 "public_key": str(root / "key.pub"),

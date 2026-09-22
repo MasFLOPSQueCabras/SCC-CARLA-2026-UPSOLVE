@@ -276,7 +276,20 @@ class LifecycleService[BackendT: LifecycleBackend]:
                     checkpoint.error = None
                     self.state.write(node.id, checkpoint)
 
-            self._parallel(nodes, apply)
+            hpc = self.cluster.hpc
+            if operation in ("down", "destroy") and hpc is not None:
+                # Keep shared storage available until every selected client has
+                # stopped. A client failure leaves the server running for retry.
+                self._parallel(
+                    tuple(node for node in nodes if node.hostname != hpc.nfs_server),
+                    apply,
+                )
+                self._parallel(
+                    tuple(node for node in nodes if node.hostname == hpc.nfs_server),
+                    apply,
+                )
+            else:
+                self._parallel(nodes, apply)
             if operation in ("up", "configure"):
                 needs_configuration = operation == "configure" or any(
                     self.state.read(node.id).phase != "ready"

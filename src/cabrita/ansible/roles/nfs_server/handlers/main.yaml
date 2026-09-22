@@ -1,5 +1,4 @@
 ---
-- name: Restart NFS Server
-  ansible.builtin.systemd_service:
-    name: nfs-server
-    state: restarted
+- name: Reload Cabrita exports
+  ansible.builtin.command: exportfs -ra
+  changed_when: true
