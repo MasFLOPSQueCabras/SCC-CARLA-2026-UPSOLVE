@@ -5,16 +5,16 @@ import pytest
 from test_lifecycle import Backend
 from typer.testing import CliRunner
 
-from cabrita.cli import app
-from cabrita.commands import workflow
-from cabrita.core.lifecycle.service import (
+from cabritactl.cli import app
+from cabritactl.commands import workflow
+from cabritactl.core.lifecycle.service import (
     LifecycleService,
     Observation,
     ResourceLocks,
     StateStore,
 )
-from cabrita.core.manifest import parse_manifest
-from cabrita.core.resolved import ResolvedCluster
+from cabritactl.core.manifest import parse_manifest
+from cabritactl.core.resolved import ResolvedCluster
 
 
 @pytest.mark.parametrize("command", ["up", "deploy", "configure", "down", "destroy"])

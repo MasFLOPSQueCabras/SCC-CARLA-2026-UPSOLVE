@@ -1,6 +1,6 @@
 # Troubleshooting
 
-Run `cabrita doctor --cluster cluster.yaml` first. Missing native tools, SSH
+Run `cabritactl doctor --cluster cluster.yaml` first. Missing native tools, SSH
 keys, provider libraries, or provider access must be corrected before deployment.
 Provider extras install Python libraries; they do not install host services.
 

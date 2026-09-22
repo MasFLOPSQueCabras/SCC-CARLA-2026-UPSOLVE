@@ -1,10 +1,13 @@
-# Migrating to Cabrita
+# Migrating to cabritactl
 
-The distribution, import package, executable, and application directories are now
-`cabrita`. The former `scc` and `scc-carla` executables and separate workspace
-provider distributions are removed. Uninstall those distributions explicitly if
-previously installed. Cabrita does not discover, adopt, rename, or delete their
-state, virtual machines, caches, disks, or bastion media.
+The distribution, Python package, and executable are `cabritactl`. The former
+`cabrita`, `scc`, and `scc-carla` executable names have no compatibility aliases.
+Uninstall older distributions explicitly if previously installed. Python imports
+must use `cabritactl`.
+
+Cabrita remains the deployment resource namespace: state/cache directories,
+managed VM names, and guest configuration paths continue to use `cabrita`.
+Renaming the CLI does not rename or adopt SCC resources.
 
 The environment prefix is `CABRITA_`. Copy configuration intentionally and review
 resource names before execution. Managed virtual machine names include `cabrita-` and the declared cluster name.
@@ -16,11 +19,11 @@ alias and credentials for your environment. Resources have no repository symlink
 
 ## Installation prerequisites
 
-Python 3.14 or newer and uv are required. PyPI’s `cabrita` name is currently
-occupied by an unrelated package; use the repository or a locally built wheel
-until publication is resolved. The intended published base command is
-`uv tool install cabrita`; provider commands are `uv tool install 'cabrita[libvirt]'` or
-`uv tool install 'cabrita[helvetios]'` to select optional dependencies.
+Python 3.14 or newer and uv are required. The `cabritactl` PyPI name was available
+when checked on 2026-09-22. Until this project is published, install a locally
+built wheel or use the checkout. Published installation commands will be
+`uv tool install cabritactl`, `uv tool install 'cabritactl[libvirt]'`, or
+`uv tool install 'cabritactl[helvetios]'`.
 
 Libvirt needs a running libvirt/QEMU installation, permissions for its socket,
 `qemu-img`, and a suitable virtualization runner. Building `libvirt-python` needs
@@ -46,7 +49,7 @@ acceptance evidence.
 
 There are no compatibility aliases. Providers are named `libvirt` and
 `helvetios`; `vm`, `bmc`, and `chi` are not accepted provider names. Use root
-`cabrita init`, `validate`, and `plan` with `--cluster`; the old `cluster` commands
+`cabritactl init`, `validate`, and `plan` with `--cluster`; the old `cluster` commands
 and `provider add` are removed. `provider list` reports available integrations.
 Golden images use `image capture`, `image inspect`, and `image list`.
 

@@ -22,16 +22,16 @@ jobs:
       - run: uv run pytest
       - name: Validate packaged Ansible playbooks
         run: |
-          uv run ansible-galaxy collection install -r src/cabrita/ansible/requirements.yml
-          ANSIBLE_CONFIG=src/cabrita/ansible/ansible.cfg ANSIBLE_ROLES_PATH=src/cabrita/ansible/roles uv run ansible-playbook -i 'localhost,' --syntax-check src/cabrita/ansible/playbooks/site.yaml src/cabrita/ansible/playbooks/verify_ib.yaml
+          uv run ansible-galaxy collection install -r src/cabritactl/ansible/requirements.yml
+          ANSIBLE_CONFIG=src/cabritactl/ansible/ansible.cfg ANSIBLE_ROLES_PATH=src/cabritactl/ansible/roles uv run ansible-playbook -i 'localhost,' --syntax-check src/cabritactl/ansible/playbooks/site.yaml src/cabritactl/ansible/playbooks/verify_ib.yaml
       - name: Validate authoring workflow
         run: |
           sudo systemctl start libvirtd.socket
           sudo chmod a+rw /var/run/libvirt/libvirt-sock
           touch /tmp/cabrita-plan-fixture.qcow2
-          uv run cabrita init /tmp/cabrita-plan --artifact /tmp/cabrita-plan-fixture.qcow2
-          uv run cabrita validate --cluster /tmp/cabrita-plan/cluster.yaml
-          uv run cabrita plan --cluster /tmp/cabrita-plan/cluster.yaml --json
-          uv run cabrita up --dry-run --cluster /tmp/cabrita-plan/cluster.yaml
+          uv run cabritactl init /tmp/cabrita-plan --artifact /tmp/cabrita-plan-fixture.qcow2
+          uv run cabritactl validate --cluster /tmp/cabrita-plan/cluster.yaml
+          uv run cabritactl plan --cluster /tmp/cabrita-plan/cluster.yaml --json
+          uv run cabritactl up --dry-run --cluster /tmp/cabrita-plan/cluster.yaml
       - name: Build distribution
         run: uv build

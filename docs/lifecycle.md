@@ -1,6 +1,6 @@
 # Lifecycle and recovery
 
-Use `cabrita init --artifact /path/to/base.qcow2`, then `validate`, `doctor`,
+Use `cabritactl init --artifact /path/to/base.qcow2`, then `validate`, `doctor`,
 `plan`, `up`, and `verify`. Select the same manifest with `--cluster` and any
 subset with repeated `--node` options. `plan`, `status`, and `verify` support
 `--json`. Mutation commands accept `--yes` and `--dry-run`.
@@ -23,11 +23,11 @@ cluster state and destruction.
 Power, BIOS, SSH, and lock commands use the manifest's targets. Examples:
 
 ```bash
-cabrita power status --cluster cluster.yaml --node 10
-cabrita power off --cluster cluster.yaml --node 10 --yes
-cabrita ssh --cluster cluster.yaml --node 10 -- uname -a
-cabrita bios show --cluster helvetios.yaml --json
-cabrita lock list --cluster cluster.yaml
+cabritactl power status --cluster cluster.yaml --node 10
+cabritactl power off --cluster cluster.yaml --node 10 --yes
+cabritactl ssh --cluster cluster.yaml --node 10 -- uname -a
+cabritactl bios show --cluster helvetios.yaml --json
+cabritactl lock list --cluster cluster.yaml
 ```
 
 Local locks use flock; Helvetios locks are held on the bastion by an SSH session.

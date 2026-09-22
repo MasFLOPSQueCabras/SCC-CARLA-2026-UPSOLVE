@@ -3,14 +3,14 @@ from pathlib import Path
 
 import pytest
 
-from cabrita.core.lifecycle.service import (
+from cabritactl.core.lifecycle.service import (
     LifecycleService,
     Observation,
     ResourceLocks,
     StateStore,
 )
-from cabrita.core.manifest import parse_manifest
-from cabrita.core.resolved import ResolvedCluster
+from cabritactl.core.manifest import parse_manifest
+from cabritactl.core.resolved import ResolvedCluster
 
 
 class Backend:

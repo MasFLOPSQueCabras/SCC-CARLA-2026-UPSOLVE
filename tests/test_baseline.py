@@ -4,11 +4,11 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from cabrita.bootstrap.artifacts import ArtifactCache
-from cabrita.cli import app
-from cabrita.core.bootstrap import ArtifactSpec
-from cabrita.core.manifest import parse_manifest
-from cabrita.core.resolved import ResolvedCluster
+from cabritactl.bootstrap.artifacts import ArtifactCache
+from cabritactl.cli import app
+from cabritactl.core.bootstrap import ArtifactSpec
+from cabritactl.core.manifest import parse_manifest
+from cabritactl.core.resolved import ResolvedCluster
 
 
 def test_nested_manifest_inheritance(manifest_text: str) -> None:
@@ -67,7 +67,7 @@ def test_deploy_cli_failure_exit(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    from cabrita.commands import workflow
+    from cabritactl.commands import workflow
 
     def unavailable(path: Path):
         raise RuntimeError("Provider unavailable")

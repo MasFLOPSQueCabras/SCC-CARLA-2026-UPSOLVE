@@ -2,8 +2,8 @@ from pathlib import Path
 
 import pytest
 
-from cabrita.core.hpc import HPCSettings
-from cabrita.core.manifest import parse_manifest
+from cabritactl.core.hpc import HPCSettings
+from cabritactl.core.manifest import parse_manifest
 
 
 def manifest():
@@ -68,7 +68,7 @@ def test_hpl_numerical_failures_are_not_successes():
     from importlib.resources import files
 
     validate = runpy.run_path(
-        str(files("cabrita").joinpath("ansible/roles/hpl/files/check_result.py"))
+        str(files("cabritactl").joinpath("ansible/roles/hpl/files/check_result.py"))
     )["validate"]
     passed = "1 tests completed and passed residual checks\n0 tests completed and failed residual checks\n0 tests skipped because of illegal input values"
     validate(passed)
@@ -86,8 +86,8 @@ def test_competition_init_preserves_valid_shared_configuration(
 ):
     from typer.testing import CliRunner
 
-    from cabrita.cli import app
-    from cabrita.core.resolved import ResolvedCluster
+    from cabritactl.cli import app
+    from cabritactl.core.resolved import ResolvedCluster
 
     monkeypatch.setenv("CABRITA_BMC_USER", "test-user")
     monkeypatch.setenv("CABRITA_BMC_PASSWORD", "test-password")
@@ -117,11 +117,11 @@ def test_shared_configuration_refuses_missing_nodes_before_ansible(
 ):
     from unittest.mock import Mock
 
-    from cabrita.bootstrap.artifacts import ArtifactCache
-    from cabrita.core.lifecycle.service import StateStore
-    from cabrita.core.providers.base import NodeProvider
-    from cabrita.core.resolved import ResolvedCluster
-    from cabrita.lifecycle import ProviderBackend
+    from cabritactl.bootstrap.artifacts import ArtifactCache
+    from cabritactl.core.lifecycle.service import StateStore
+    from cabritactl.core.providers.base import NodeProvider
+    from cabritactl.core.resolved import ResolvedCluster
+    from cabritactl.lifecycle import ProviderBackend
 
     cluster = ResolvedCluster(tmp_path / "cluster.yaml", manifest())
     backend = ProviderBackend(
@@ -135,7 +135,7 @@ def test_shared_configuration_refuses_missing_nodes_before_ansible(
         ArtifactCache(tmp_path / "cache"),
     )
     run = Mock()
-    monkeypatch.setattr("cabrita.lifecycle.subprocess.run", run)
+    monkeypatch.setattr("cabritactl.lifecycle.subprocess.run", run)
     with pytest.raises(ValueError, match="all declared nodes"):
         backend.configure(cluster.nodes([7]))
     run.assert_not_called()

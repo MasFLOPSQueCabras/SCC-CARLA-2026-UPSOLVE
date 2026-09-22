@@ -8,9 +8,9 @@ from unittest.mock import Mock
 import pytest
 import yaml
 
-from cabrita.core.bootstrap import CustomPreparer, PreparationSpec
-from cabrita.core.di import create_registry
-from cabrita.core.resolved import ResolvedCluster
+from cabritactl.core.bootstrap import CustomPreparer, PreparationSpec
+from cabritactl.core.di import create_registry
+from cabritactl.core.resolved import ResolvedCluster
 
 
 @pytest.fixture
@@ -78,7 +78,7 @@ def test_cluster_and_shared_hardware_isolation(authoring_manifest: Path) -> None
     assert first.lock_key(first.nodes()[0]) != second.lock_key(second.nodes()[0])
     for cluster in (first, second):
         cluster.manifest.provider = "helvetios"
-        from cabrita.core.manifest import BMCSpec
+        from cabritactl.core.manifest import BMCSpec
 
         cluster.nodes()[0].bmc = BMCSpec(ip="192.0.2.100")
     assert first.lock_key(first.nodes()[0]) == second.lock_key(second.nodes()[0])

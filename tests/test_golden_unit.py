@@ -5,11 +5,11 @@ from pathlib import Path
 
 import pytest
 
-from cabrita.bootstrap.artifacts import ArtifactCache
-from cabrita.bootstrap.recovery import load_metadata
-from cabrita.bootstrap.restore_runtime import decompress, download, restore
-from cabrita.core.manifest import parse_manifest
-from cabrita.core.resolved import ResolvedCluster
+from cabritactl.bootstrap.artifacts import ArtifactCache
+from cabritactl.bootstrap.recovery import load_metadata
+from cabritactl.bootstrap.restore_runtime import decompress, download, restore
+from cabritactl.core.manifest import parse_manifest
+from cabritactl.core.resolved import ResolvedCluster
 
 
 def test_decoder_preserves_bytes_and_rejects_truncation(tmp_path: Path) -> None:
@@ -78,7 +78,7 @@ def test_incompatible_golden_metadata_rejected_before_preparation(
 nodes:
   - {id: 7, hostname: restored, ip: 192.0.2.7, mac: '52:54:00:00:00:07'}
 """)
-    from cabrita.core.bootstrap import ArtifactSpec
+    from cabritactl.core.bootstrap import ArtifactSpec
 
     manifest.bootstrap.payload = "payload"
     manifest.bootstrap.metadata = "metadata"
@@ -98,7 +98,7 @@ nodes:
 
 
 def test_invalid_compressed_frame_does_not_modify_target(tmp_path: Path) -> None:
-    from cabrita.bootstrap.restore_runtime import write_verified_payload
+    from cabritactl.bootstrap.restore_runtime import write_verified_payload
 
     payload = tmp_path / "truncated.zst"
     data = b"disk blocks" * 100_000
@@ -127,9 +127,9 @@ def test_capture_refuses_unready_or_running_nodes(
 
     from typer.testing import CliRunner
 
-    from cabrita.commands import image
-    from cabrita.core.lifecycle.service import ResourceLocks
-    from cabrita.core.providers.base import PowerState
+    from cabritactl.commands import image
+    from cabritactl.core.lifecycle.service import ResourceLocks
+    from cabritactl.core.providers.base import PowerState
 
     manifest = parse_manifest("""name: capture-test
 nodes:
@@ -162,7 +162,7 @@ nodes:
 def test_capture_rejects_separate_identity_filesystems() -> None:
     import xml.etree.ElementTree as ET
 
-    from cabrita.bootstrap.golden import validate_system
+    from cabritactl.bootstrap.golden import validate_system
 
     system = ET.fromstring("""<operatingsystem><name>linux</name><applications>
 <application><name>NetworkManager</name></application>
@@ -180,10 +180,10 @@ def test_reachable_old_system_cannot_pass_recovery_verification(
 ) -> None:
     from unittest.mock import Mock
 
-    from cabrita.core.bootstrap import BootstrapMethod
-    from cabrita.core.lifecycle.service import StateStore
-    from cabrita.core.providers.base import NodeProvider
-    from cabrita.lifecycle import ProviderBackend
+    from cabritactl.core.bootstrap import BootstrapMethod
+    from cabritactl.core.lifecycle.service import StateStore
+    from cabritactl.core.providers.base import NodeProvider
+    from cabritactl.lifecycle import ProviderBackend
 
     manifest = parse_manifest("""name: verify-restore
 nodes:
@@ -209,7 +209,7 @@ nodes:
     )
     monkeypatch.setattr(backend, "_reachable", lambda node: True)
     monkeypatch.setattr(
-        "cabrita.lifecycle.subprocess.run",
+        "cabritactl.lifecycle.subprocess.run",
         Mock(return_value=Mock(stdout='{"token":"previous-attempt"}')),
     )
     with pytest.raises(ValueError, match="completion marker mismatch"):
@@ -219,7 +219,7 @@ nodes:
 def test_image_inspection_propagates_tool_failure(tmp_path: Path, monkeypatch):
     import subprocess
 
-    from cabrita.core.image import inspect_image
+    from cabritactl.core.image import inspect_image
 
     disk = tmp_path / "broken.qcow2"
     disk.write_bytes(b"invalid disk")
@@ -227,6 +227,6 @@ def test_image_inspection_propagates_tool_failure(tmp_path: Path, monkeypatch):
     def fail(*args, **kwargs):
         raise subprocess.CalledProcessError(1, ["qemu-img"])
 
-    monkeypatch.setattr("cabrita.core.image.subprocess.run", fail)
+    monkeypatch.setattr("cabritactl.core.image.subprocess.run", fail)
     with pytest.raises(subprocess.CalledProcessError):
         inspect_image(disk)

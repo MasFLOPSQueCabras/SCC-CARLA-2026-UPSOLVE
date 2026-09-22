@@ -50,7 +50,7 @@ wheels = [
 ]
 
 [[package]]
-name = "cabrita"
+name = "cabritactl"
 version = "1.0.0"
 source = { editable = "." }
 dependencies = [
@@ -85,7 +85,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "ansible-core", specifier = ">=2.21.4" },
-    { name = "cabrita", extras = ["libvirt", "helvetios"], marker = "extra == 'all'" },
+    { name = "cabritactl", extras = ["libvirt", "helvetios"], marker = "extra == 'all'" },
     { name = "httpx2", extras = ["socks"], marker = "extra == 'helvetios'", specifier = ">=2.13.0" },
     { name = "jinja2", specifier = ">=3.1.6" },
     { name = "libvirt-python", marker = "extra == 'libvirt'", specifier = ">=12.0.0" },

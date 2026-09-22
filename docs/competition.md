@@ -3,7 +3,7 @@
 Initialize the preserved competition profile with an installer ISO:
 
 ```bash
-cabrita init ./competition --provider helvetios --artifact /path/to/Rocky-minimal.iso
+cabritactl init ./competition --provider helvetios --artifact /path/to/Rocky-minimal.iso
 ```
 
 Review every node's BMC endpoint, management IP/MAC, target disk, hardware, user,

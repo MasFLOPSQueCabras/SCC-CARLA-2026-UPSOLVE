@@ -3,12 +3,12 @@ from unittest.mock import Mock
 
 import pytest
 
-from cabrita.core.manifest import parse_manifest
+from cabritactl.core.manifest import parse_manifest
 
 
 def controller(monkeypatch):
     pytest.importorskip("httpx2", reason="requires the optional Helvetios Python extra")
-    from cabrita.providers.helvetios.bmc_client import BMCController
+    from cabritactl.providers.helvetios.bmc_client import BMCController
 
     bmc = BMCController(parse_manifest("name: redfish\nprovider: helvetios"))
     client = Mock()

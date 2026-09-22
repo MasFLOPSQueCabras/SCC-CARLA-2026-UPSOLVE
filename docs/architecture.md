@@ -22,6 +22,6 @@ libvirt URI and resource name, or the physical BMC endpoint. Artifact locks
 protect shared immutable cache entries. Golden captures are independent of the
 source VM's disk and cluster lifetime.
 
-Resources ship inside the `cabrita` wheel. There is one canonical packaged
+Resources ship inside the `cabritactl` wheel. There is one canonical packaged
 Ansible tree and one template tree per provider. User-authored files resolve
 from the manifest and can override packaged inputs without editing the install.

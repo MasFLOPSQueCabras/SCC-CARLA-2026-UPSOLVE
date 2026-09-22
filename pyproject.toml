@@ -1,5 +1,5 @@
 [project]
-name = "cabrita"
+name = "cabritactl"
 version = "1.0.0"
 description = "Authorable clusters on libvirt and Helvetios"
 readme = "README.md"
@@ -18,10 +18,10 @@ dependencies = [
 [project.optional-dependencies]
 libvirt = ["libvirt-python>=12.0.0"]
 helvetios = ["httpx2[socks]>=2.13.0"]
-all = ["cabrita[libvirt,helvetios]"]
+all = ["cabritactl[libvirt,helvetios]"]
 
 [project.scripts]
-cabrita = "cabrita.cli:main"
+cabritactl = "cabritactl.cli:main"
 
 [build-system]
 requires = ["uv_build>=0.12.17,<0.13.0"]

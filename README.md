@@ -1,6 +1,6 @@
-# Cabrita
+# cabritactl
 
-Cabrita provisions user-authored clusters on local libvirt VMs and Helvetios
+`cabritactl` provisions user-authored clusters on local libvirt VMs and Helvetios
 bare-metal nodes. A `cluster.yaml` declares nodes, artifacts, bootstrap inputs,
 and configuration. Planning and execution use the same resolved manifest.
 
@@ -12,15 +12,15 @@ validation. Repeated `up` preserves installed disks; replacement requires
 
 ## Install
 
-Python 3.14 or newer is required. **Publication is blocked:** PyPI’s `cabrita`
-name currently belongs to an unrelated project. Do not install that package
-expecting this CLI. The intended commands, once name ownership is resolved, are:
+Python 3.14 or newer is required. The distribution and command are `cabritactl`.
+The PyPI name was available when checked on 2026-09-22; publication is separate
+from this repository change. Once published:
 
 ```bash
-uv tool install cabrita
+uv tool install cabritactl
 # Select the provider dependencies you need:
-uv tool install 'cabrita[libvirt]'
-# or: uv tool install 'cabrita[helvetios]'
+uv tool install 'cabritactl[libvirt]'
+# or: uv tool install 'cabritactl[helvetios]'
 ```
 
 From a checkout, use `uv sync --extra libvirt` and prefix commands with `uv run`.
@@ -32,14 +32,14 @@ Native QEMU/libvirt, SSH, and media tools are installed separately; see
 With an existing cloud image and SSH key:
 
 ```bash
-cabrita init ./demo --provider libvirt --artifact /path/to/cloud.qcow2
+cabritactl init ./demo --provider libvirt --artifact /path/to/cloud.qcow2
 # Review demo/cluster.yaml and its explicit nodes, network, and SSH keys.
-cabrita validate --cluster demo/cluster.yaml
-cabrita doctor --cluster demo/cluster.yaml
-cabrita plan --cluster demo/cluster.yaml --json
-cabrita up --cluster demo/cluster.yaml --yes
-cabrita verify --cluster demo/cluster.yaml --json
-cabrita down --cluster demo/cluster.yaml --yes
+cabritactl validate --cluster demo/cluster.yaml
+cabritactl doctor --cluster demo/cluster.yaml
+cabritactl plan --cluster demo/cluster.yaml --json
+cabritactl up --cluster demo/cluster.yaml --yes
+cabritactl verify --cluster demo/cluster.yaml --json
+cabritactl down --cluster demo/cluster.yaml --yes
 ```
 
 `down` preserves disks. `destroy` removes managed virtual resources while keeping

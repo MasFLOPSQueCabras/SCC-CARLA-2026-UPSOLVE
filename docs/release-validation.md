@@ -2,18 +2,18 @@
 
 ## Publication status
 
-On 2026-09-22, the [PyPI project named cabrita](https://pypi.org/project/cabrita/)
-was occupied by an unrelated Docker Compose dashboard package, version 3.0.1.
-Publication under that name is blocked pending an explicit ownership/name
-decision. The repository and distribution name remain unchanged. No release has
-been published by this implementation work.
+The distribution, Python package, and command were renamed to `cabritactl`
+because [PyPI's cabrita project](https://pypi.org/project/cabrita/) belongs to an
+unrelated Docker Compose dashboard. On 2026-09-22, the PyPI JSON endpoint for
+`cabritactl` returned HTTP 404. This is an availability check, not a reservation.
+No release has been published by this implementation work.
 
 Build and install this project's wheel directly:
 
 ```bash
 uv build
-uv tool install ./dist/cabrita-*.whl
-cabrita --version
+uv tool install ./dist/cabritactl-*.whl
+cabritactl --version
 ```
 
 ## Required checks
@@ -71,3 +71,13 @@ Physical Helvetios virtual-media boot, restore, BIOS, InfiniBand,
 full-size HPL, and competition submission requirements remain unverified.
 The Spack competition environment is pinned but has not been built on hardware
 in this validation run. Libvirt results cannot substitute for that evidence.
+
+## cabritactl rename verification
+
+The distribution rename passed the full quality gate (71 unit tests), real
+BIOS/UEFI cloud-init deployment, and libvirt lifecycle acceptance (3 tests).
+Fresh wheel installs outside the checkout passed help, version, initialization,
+manifest validation, and packaged-resource checks. Both provider extras installed
+and imported in a clean Python 3.14 container. The wheel exposes only the
+`cabritactl` executable and Python package; there is no `cabrita` alias.
+Rename-specific deployment logs are under `test-results/cabritactl-rename`.

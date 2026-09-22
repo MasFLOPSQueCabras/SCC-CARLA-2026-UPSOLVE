@@ -17,13 +17,17 @@ from typing import Literal
 import pytest
 import yaml
 
-from cabrita.bootstrap.artifacts import ArtifactCache
-from cabrita.bootstrap.golden import capture
-from cabrita.config import ClusterSettings
-from cabrita.core.lifecycle.service import LifecycleService, ResourceLocks, StateStore
-from cabrita.core.providers.base import ProviderPaths
-from cabrita.core.resolved import ResolvedCluster
-from cabrita.lifecycle import ProviderBackend
+from cabritactl.bootstrap.artifacts import ArtifactCache
+from cabritactl.bootstrap.golden import capture
+from cabritactl.config import ClusterSettings
+from cabritactl.core.lifecycle.service import (
+    LifecycleService,
+    ResourceLocks,
+    StateStore,
+)
+from cabritactl.core.providers.base import ProviderPaths
+from cabritactl.core.resolved import ResolvedCluster
+from cabritactl.lifecycle import ProviderBackend
 
 
 def artifact(path: Path, format: str) -> dict[str, str]:
@@ -192,7 +196,7 @@ def test_capture_destroy_and_restore_independent_nodes(
             path.write_text(yaml.safe_dump(document))
             resolved = ResolvedCluster.load(path)
             module = importlib.import_module(
-                "cabrita.providers.libvirt_backend.provider"
+                "cabritactl.providers.libvirt_backend.provider"
             )
             provider = module.LibvirtProvider(
                 manifest=resolved.manifest,

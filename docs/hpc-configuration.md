@@ -41,14 +41,14 @@ Rocky installer allocates roughly 20% of RAM to `/run`; the acceptance test uses
 8 GiB for recovery of its prepared HPC image. Larger software images require
 more RAM. An undersized installer refuses restoration before writing the disk.
 
-Run `cabrita configure --cluster cluster.yaml --yes` with all nodes selected.
+Run `cabritactl configure --cluster cluster.yaml --yes` with all nodes selected.
 Repeated configuration preserves the compiled binary unless its build inputs
 change. Run and collect a benchmark through SSH, substituting the declared head
 node ID:
 
 ```bash
-cabrita ssh --cluster cluster.yaml --node 1 -- /shared/hpl/run_hpl.sh
-cabrita ssh --cluster cluster.yaml --node 1 -- tar -C /shared/hpl -czf - results > hpl-results.tar.gz
+cabritactl ssh --cluster cluster.yaml --node 1 -- /shared/hpl/run_hpl.sh
+cabritactl ssh --cluster cluster.yaml --node 1 -- tar -C /shared/hpl -czf - results > hpl-results.tar.gz
 ```
 
 Each invocation creates a result directory containing `HPL.dat` and `HPL.out`.

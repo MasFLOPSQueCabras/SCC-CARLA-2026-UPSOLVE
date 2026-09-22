@@ -13,12 +13,16 @@ from pathlib import Path
 import pytest
 import yaml
 
-from cabrita.bootstrap.artifacts import ArtifactCache
-from cabrita.config import ClusterSettings
-from cabrita.core.lifecycle.service import LifecycleService, ResourceLocks, StateStore
-from cabrita.core.providers.base import ProviderPaths
-from cabrita.core.resolved import ResolvedCluster
-from cabrita.lifecycle import ProviderBackend
+from cabritactl.bootstrap.artifacts import ArtifactCache
+from cabritactl.config import ClusterSettings
+from cabritactl.core.lifecycle.service import (
+    LifecycleService,
+    ResourceLocks,
+    StateStore,
+)
+from cabritactl.core.providers.base import ProviderPaths
+from cabritactl.core.resolved import ResolvedCluster
+from cabritactl.lifecycle import ProviderBackend
 
 
 @pytest.mark.parametrize(
@@ -104,7 +108,9 @@ def test_unattended_bootstrap(
         manifest.write_text(yaml.safe_dump(document))
         cluster = ResolvedCluster.load(manifest)
         shutil.copyfile(manifest, e2e_log_dir / "cluster.yaml")
-        module = importlib.import_module("cabrita.providers.libvirt_backend.provider")
+        module = importlib.import_module(
+            "cabritactl.providers.libvirt_backend.provider"
+        )
         paths = ProviderPaths(root, root, root / "state.db", storage_dir=root / "disks")
         provider = module.LibvirtProvider(
             manifest=cluster.manifest, paths=paths, settings=ClusterSettings()

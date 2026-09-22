@@ -7,18 +7,18 @@ from pathlib import Path
 
 import pytest
 
-from cabrita.bootstrap.artifacts import ArtifactCache
-from cabrita.config import ClusterSettings
-from cabrita.core.lifecycle.service import (
+from cabritactl.bootstrap.artifacts import ArtifactCache
+from cabritactl.config import ClusterSettings
+from cabritactl.core.lifecycle.service import (
     Checkpoint,
     LifecycleService,
     ResourceLocks,
     StateStore,
 )
-from cabrita.core.manifest import parse_manifest
-from cabrita.core.providers.base import ProviderPaths
-from cabrita.core.resolved import ResolvedCluster
-from cabrita.lifecycle import ProviderBackend
+from cabritactl.core.manifest import parse_manifest
+from cabritactl.core.providers.base import ProviderPaths
+from cabritactl.core.resolved import ResolvedCluster
+from cabritactl.lifecycle import ProviderBackend
 
 
 @pytest.mark.e2e(provider="libvirt", bootstrap="lifecycle")
@@ -26,7 +26,9 @@ def test_stopped_vm_disk_preserved_then_destroyed(
     tmp_path: Path, e2e_log_dir: Path
 ) -> None:
     try:
-        module = importlib.import_module("cabrita.providers.libvirt_backend.provider")
+        module = importlib.import_module(
+            "cabritactl.providers.libvirt_backend.provider"
+        )
         name = f"acceptance-{uuid.uuid7().hex}"
         manifest = parse_manifest(f"""name: {name}
 nodes:

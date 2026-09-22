@@ -3,8 +3,8 @@ from pathlib import Path
 
 import pytest
 
-from cabrita.bootstrap.artifacts import ArtifactCache, artifact_lock
-from cabrita.core.bootstrap import ArtifactSpec
+from cabritactl.bootstrap.artifacts import ArtifactCache, artifact_lock
+from cabritactl.core.bootstrap import ArtifactSpec
 
 
 def test_cache_reuses_verified_artifact_after_source_removed(tmp_path: Path) -> None:
@@ -45,7 +45,7 @@ def test_artifact_lock_wait_is_bounded(tmp_path: Path) -> None:
 def test_cached_build_checks_both_installer_and_auxiliary_media(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from cabrita.bootstrap import iso_builder
+    from cabritactl.bootstrap import iso_builder
 
     built: list[Path] = []
 
@@ -75,10 +75,10 @@ def test_cached_build_checks_both_installer_and_auxiliary_media(
 def test_kickstart_uses_declared_subnet_and_disk_bus(tmp_path: Path) -> None:
     from importlib.resources import files
 
-    from cabrita.bootstrap.media import render_kickstart
-    from cabrita.core.manifest import parse_manifest
-    from cabrita.core.resolved import ResolvedCluster
-    from cabrita.core.templating import TemplateEngine
+    from cabritactl.bootstrap.media import render_kickstart
+    from cabritactl.core.manifest import parse_manifest
+    from cabritactl.core.resolved import ResolvedCluster
+    from cabritactl.core.templating import TemplateEngine
 
     manifest = parse_manifest("""
 name: authored
@@ -93,7 +93,7 @@ nodes:
 """)
     cluster = ResolvedCluster(tmp_path / "cluster.yaml", manifest)
     templates = TemplateEngine(
-        [Path(str(files("cabrita.providers.helvetios").joinpath("templates")))]
+        [Path(str(files("cabritactl.providers.helvetios").joinpath("templates")))]
     )
     output = render_kickstart(
         cluster, manifest.nodes[0], templates, "ssh-ed25519 test", tmp_path

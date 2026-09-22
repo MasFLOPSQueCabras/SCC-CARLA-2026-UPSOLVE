@@ -4,9 +4,9 @@ Configure a libvirt node once, verify its services, then stop it and capture its
 managed disk:
 
 ```bash
-cabrita down --cluster cluster.yaml --node 1 --yes
-cabrita image capture --cluster cluster.yaml --node 1 --output ./golden
-cabrita image inspect ./golden/golden.json
+cabritactl down --cluster cluster.yaml --node 1 --yes
+cabritactl image capture --cluster cluster.yaml --node 1 --output ./golden
+cabritactl image inspect ./golden/golden.json
 sha256sum ./golden/golden.json ./golden/golden.raw.zst ./images/installer.iso
 ```
 
