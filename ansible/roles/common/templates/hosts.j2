@@ -1,8 +1,0 @@
-127.0.0.1 localhost localhost.localdomain
-::1 localhost localhost.localdomain
-{% for host in groups['cluster'] %}
-{{ hostvars[host]['ansible_host'] }} {{ host }}
-{% if transport == 'ucx' %}
-{{ cluster_addresses[host] }} {{ host }}-ib
-{% endif %}
-{% endfor %}

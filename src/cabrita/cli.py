@@ -5,7 +5,6 @@ from rich.console import Console
 
 from cabrita import __version__
 from cabrita.commands import maintenance, workflow
-from cabrita.commands.cluster import cluster_app
 from cabrita.commands.image import image_app
 from cabrita.commands.provider import provider_app
 
@@ -37,7 +36,6 @@ def options(
 
 
 # Mount modular sub-apps
-app.add_typer(cluster_app, name="cluster")
 app.add_typer(provider_app, name="provider")
 app.add_typer(image_app, name="image")
 

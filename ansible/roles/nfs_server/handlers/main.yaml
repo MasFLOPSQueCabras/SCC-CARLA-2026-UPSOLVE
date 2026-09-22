@@ -1,4 +1,0 @@
----
-- name: Reload Cabrita exports
-  ansible.builtin.command: exportfs -ra
-  changed_when: true

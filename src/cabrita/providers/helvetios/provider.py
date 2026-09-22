@@ -1,4 +1,3 @@
-import importlib.resources as ir
 import logging
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
@@ -23,7 +22,7 @@ class HelvetiosProvider(NodeProvider):
 
     def __init__(
         self,
-        manifest: ClusterManifest | None = None,
+        manifest: ClusterManifest,
         paths: ProviderPaths | None = None,
         bastion_ssh_host: str = "cabrita-bastion",
         bastion_hostname: str = "carlanga",
@@ -50,17 +49,13 @@ class HelvetiosProvider(NodeProvider):
             dns = settings.dns_ip
             state_db = settings.bastion_state_db_path
         else:
-            self.bastion_ssh_host = (
-                manifest.bastion.ssh_host if manifest else bastion_ssh_host
-            )
+            self.bastion_ssh_host = manifest.bastion.ssh_host
             self.bastion_hostname = bastion_hostname
             self.http_port = http_port
             self.http_ip = http_ip
-            remote_serve = (
-                manifest.bastion.remote_serve_dir if manifest else "~/cabrita_serve"
-            )
-            gateway = manifest.network.gateway if manifest else "10.2.72.254"
-            dns = manifest.network.dns if manifest else "10.2.72.254"
+            remote_serve = manifest.bastion.remote_serve_dir
+            gateway = manifest.network.gateway
+            dns = manifest.network.dns
             state_db = Path.home() / ".config" / "cabrita" / "state.db"
 
         self.bmc = BMCController(
@@ -95,24 +90,6 @@ class HelvetiosProvider(NodeProvider):
     def list_presets(cls) -> list[str]:
         return ["hpc"]
 
-    @classmethod
-    def get_preset_config(cls, profile: str = "hpc") -> str:
-        ref = ir.files("cabrita.providers.helvetios").joinpath(
-            "configs", "helvetios-hpc.yaml"
-        )
-        return ref.read_text(encoding="utf-8")
-
-    @classmethod
-    def get_templates_dir(cls) -> Path | None:
-        try:
-            ref = ir.files("cabrita.providers.helvetios").joinpath("templates")
-            with ir.as_file(ref) as p:
-                if p.is_dir():
-                    return Path(p)
-        except ModuleNotFoundError, TypeError, FileNotFoundError:
-            pass
-        return None
-
     def _get_node_spec(self, node_id: int) -> NodeSpec | None:
         if self.manifest:
             for n in self.manifest.nodes:
@@ -125,11 +102,9 @@ class HelvetiosProvider(NodeProvider):
 
     def get_node_ip(self, node_id: int) -> str:
         spec = self._get_node_spec(node_id)
-        if spec:
-            return spec.ip
-        if self.settings and hasattr(self.settings, "get_node_ip"):
-            return self.settings.get_node_ip(node_id)
-        return f"10.2.72.{node_id}"
+        if spec is None:
+            raise ValueError(f"Undeclared node: {node_id}")
+        return spec.ip
 
     def power_on(self, node_id: int) -> bool:
         return self.bmc.power_on(node_id)

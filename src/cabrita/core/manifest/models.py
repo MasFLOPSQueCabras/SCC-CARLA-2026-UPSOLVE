@@ -118,7 +118,7 @@ class AccessSpec(BaseModel):
 class ClusterManifest(BaseModel):
     schema_version: int = 1
     name: str = Field(pattern=r"^[a-z][a-z0-9-]{0,47}$")
-    provider: Literal["libvirt", "helvetios", "bmc", "chameleon"] = "libvirt"
+    provider: Literal["libvirt", "helvetios"] = "libvirt"
     description: str = ""
     access: AccessSpec = Field(default_factory=AccessSpec)
     bootstrap: BootstrapSpec = Field(default_factory=BootstrapSpec)

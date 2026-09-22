@@ -42,7 +42,7 @@ def parse_manifest(raw_text: str) -> ClusterManifest:
     resolved_nodes: list[NodeSpec] = []
     for node in manifest.nodes:
         node_dict = node.model_dump()
-        if manifest.provider in ("libvirt", "vm"):
+        if manifest.provider == "libvirt":
             base_vm = defaults.vm.model_dump()
             if node.vm is not None:
                 base_vm = _merge_defaults(
@@ -50,7 +50,7 @@ def parse_manifest(raw_text: str) -> ClusterManifest:
                 )
             node_dict["vm"] = VMSpec.model_validate(base_vm)
 
-        if manifest.provider in ("helvetios", "bmc"):
+        if manifest.provider == "helvetios":
             base_hw = defaults.hardware.model_dump()
             if node.hardware is not None:
                 base_hw.update(node.hardware.model_dump(exclude_unset=True))

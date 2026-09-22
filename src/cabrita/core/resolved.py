@@ -82,7 +82,7 @@ class ResolvedCluster:
         match self.manifest.provider:
             case "libvirt":
                 resource = f"{libvirt_uri}/{self.resource_name(node)}"
-            case "helvetios" | "bmc":
+            case "helvetios":
                 if node.bmc is None:
                     raise ValueError(f"Node {node.id} has no BMC")
                 resource = f"bmc://{node.bmc.ip}:{node.bmc.port}"
@@ -98,9 +98,9 @@ class ResolvedCluster:
         match manifest.provider, method:
             case "libvirt", _:
                 pass
-            case (("helvetios" | "bmc"), BootstrapMethod.CLOUD_INIT):
+            case (("helvetios"), BootstrapMethod.CLOUD_INIT):
                 raise ValueError("Helvetios does not support cloud-init disk overlays")
-            case (("helvetios" | "bmc"), _):
+            case (("helvetios"), _):
                 if any(node.bmc is None for node in manifest.nodes):
                     raise ValueError("Helvetios nodes require BMC addresses")
             case _:

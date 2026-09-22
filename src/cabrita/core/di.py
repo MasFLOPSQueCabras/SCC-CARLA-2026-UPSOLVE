@@ -2,14 +2,10 @@
 
 import importlib
 import importlib.metadata
-import inspect
-import logging
 from collections.abc import Callable
 from typing import Any
 
 from cabrita.core.providers.base import NodeProvider, ProviderType
-
-logger = logging.getLogger(__name__)
 
 
 class ProviderNotInstalledError(RuntimeError):
@@ -18,14 +14,14 @@ class ProviderNotInstalledError(RuntimeError):
     def __init__(self, provider: str, reason: str | None = None) -> None:
         canonical = provider.lower()
         hint = (
-            f"uv sync --extra {canonical}"
+            f"uv tool install 'cabrita[{canonical}]'"
             if canonical in ("libvirt", "helvetios")
             else "check package dependencies"
         )
         msg = (
             f"Provider '{provider}' is not available or its dependencies are missing.\n"
             f"Details: {reason or 'Package not installed'}\n"
-            f"Hint: Run '{hint}' or 'cabrita init --provider {canonical} --install-deps' to install."
+            f"Hint: {hint}"
         )
         super().__init__(msg)
         self.provider = provider
@@ -37,7 +33,6 @@ class ProviderRegistry:
 
     def __init__(self) -> None:
         self._factories: dict[str, Callable[..., NodeProvider]] = {}
-        self._aliases: dict[str, str] = {}
         self._lazy_loaders: dict[str, tuple[str, str]] = {}
         self._discovered_plugins: bool = False
 
@@ -45,66 +40,50 @@ class ProviderRegistry:
         self,
         name: str,
         factory: Callable[..., NodeProvider],
-        aliases: list[str] | None = None,
     ) -> None:
         """Register a provider factory directly."""
         key = name.lower().strip()
         self._factories[key] = factory
-        if aliases:
-            for a in aliases:
-                self._aliases[a.lower().strip()] = key
 
     def register_lazy(
         self,
         name: str,
         module_path: str,
         class_name: str,
-        aliases: list[str] | None = None,
     ) -> None:
         """Register a provider by module path and class name to be loaded on demand."""
         key = name.lower().strip()
         self._lazy_loaders[key] = (module_path, class_name)
-        if aliases:
-            for a in aliases:
-                self._aliases[a.lower().strip()] = key
 
     def _discover_entry_points(self) -> None:
         if self._discovered_plugins:
             return
         self._discovered_plugins = True
-        try:
-            eps = importlib.metadata.entry_points(group="cabrita.providers")
-            for ep in eps:
-                name = ep.name.lower().strip()
-                if name not in self._factories and name not in self._lazy_loaders:
-                    self._factories[name] = ep.load()
-        except (ImportError, AttributeError, KeyError) as exc:
-            logger.debug("Provider entry point discovery skipped: %s", exc)
-
-    def canonical_name(self, name: str) -> str:
-        k = name.lower().strip()
-        return self._aliases.get(k, k)
+        for entry in importlib.metadata.entry_points(group="cabrita.providers"):
+            name = entry.name.lower().strip()
+            if name not in self._factories and name not in self._lazy_loaders:
+                self._factories[name] = entry.load()
 
     def is_registered(self, name: str) -> bool:
         self._discover_entry_points()
-        canon = self.canonical_name(name)
+        canon = name.lower().strip()
         return canon in self._factories or canon in self._lazy_loaders
 
     def get(self, name: str, **kwargs: Any) -> NodeProvider:
         """Resolves and instantiates a NodeProvider by name."""
         self._discover_entry_points()
-        canon = self.canonical_name(name)
+        canon = name.lower().strip()
 
         if canon in self._factories:
             factory = self._factories[canon]
-            return self._invoke_factory(factory, **kwargs)
+            return factory(**kwargs)
 
         if canon in self._lazy_loaders:
             mod_path, cls_name = self._lazy_loaders[canon]
             try:
                 mod = importlib.import_module(mod_path)
                 cls = getattr(mod, cls_name)
-                return self._invoke_factory(cls, **kwargs)
+                return cls(**kwargs)
             except ImportError as e:
                 raise ProviderNotInstalledError(canon, str(e)) from e
 
@@ -113,21 +92,10 @@ class ProviderRegistry:
             f"Unknown provider '{name}'. Registered providers: {', '.join(valid)}."
         )
 
-    def _invoke_factory(self, factory: Any, **kwargs: Any) -> NodeProvider:
-        sig = inspect.signature(factory)
-        accepted = {}
-        for param in sig.parameters.values():
-            if param.name in kwargs:
-                accepted[param.name] = kwargs[param.name]
-            elif param.kind == inspect.Parameter.VAR_KEYWORD:
-                accepted = kwargs
-                break
-        return factory(**accepted)
-
     def get_provider_class(self, name: str) -> type[NodeProvider]:
         """Resolves the NodeProvider class without instantiating it."""
         self._discover_entry_points()
-        canon = self.canonical_name(name)
+        canon = name.lower().strip()
 
         if canon in self._factories:
             factory = self._factories[canon]
@@ -163,12 +131,10 @@ def create_registry() -> ProviderRegistry:
         name=ProviderType.LIBVIRT.value,
         module_path="cabrita.providers.libvirt_backend.provider",
         class_name="LibvirtProvider",
-        aliases=["vm"],
     )
     registry.register_lazy(
         name=ProviderType.HELVETIOS.value,
         module_path="cabrita.providers.helvetios.provider",
         class_name="HelvetiosProvider",
-        aliases=["bmc"],
     )
     return registry

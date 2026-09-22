@@ -214,3 +214,19 @@ nodes:
     )
     with pytest.raises(ValueError, match="completion marker mismatch"):
         backend.verify(manifest.nodes[0])
+
+
+def test_image_inspection_propagates_tool_failure(tmp_path: Path, monkeypatch):
+    import subprocess
+
+    from cabrita.core.image import inspect_image
+
+    disk = tmp_path / "broken.qcow2"
+    disk.write_bytes(b"invalid disk")
+
+    def fail(*args, **kwargs):
+        raise subprocess.CalledProcessError(1, ["qemu-img"])
+
+    monkeypatch.setattr("cabrita.core.image.subprocess.run", fail)
+    with pytest.raises(subprocess.CalledProcessError):
+        inspect_image(disk)

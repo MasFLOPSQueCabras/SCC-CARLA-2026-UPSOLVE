@@ -1,5 +1,4 @@
 import contextlib
-import importlib.resources as ir
 import subprocess
 import time
 import xml.etree.ElementTree as ET
@@ -24,7 +23,7 @@ class LibvirtProvider(NodeProvider):
 
     def __init__(
         self,
-        manifest: ClusterManifest | None = None,
+        manifest: ClusterManifest,
         paths: ProviderPaths | None = None,
         uri: str = "qemu:///system",
         storage_dir: Path | None = None,
@@ -44,8 +43,8 @@ class LibvirtProvider(NodeProvider):
             storage_dir=storage_dir
             or (Path.home() / ".local" / "share" / "cabrita" / "libvirt_storage"),
             state_db_path=Path.home() / ".config" / "cabrita" / "state.db",
-            gateway_ip=manifest.network.gateway if manifest else "192.168.122.1",
-            dns_ip=manifest.network.dns if manifest else "192.168.122.1",
+            gateway_ip=manifest.network.gateway,
+            dns_ip=manifest.network.dns,
             remote_serve_dir=None,
             bastion_ssh_host=None,
         )
@@ -77,44 +76,17 @@ class LibvirtProvider(NodeProvider):
     def list_presets(cls) -> list[str]:
         return ["standard", "hw-optimized"]
 
-    @classmethod
-    def get_preset_config(cls, profile: str = "standard") -> str:
-        filename = (
-            "vm-hw-optimized.yaml"
-            if profile.lower() in ("hw-optimized", "cabrita")
-            else "vm-standard.yaml"
-        )
-        ref = ir.files("cabrita.providers.libvirt_backend").joinpath(
-            "configs", filename
-        )
-        return ref.read_text(encoding="utf-8")
-
-    @classmethod
-    def get_templates_dir(cls) -> Path | None:
-        try:
-            ref = ir.files("cabrita.providers.libvirt_backend").joinpath("templates")
-            with ir.as_file(ref) as p:
-                if p.is_dir():
-                    return Path(p)
-        except ModuleNotFoundError, TypeError, FileNotFoundError:
-            pass
-        return None
-
     @contextmanager
     def deployment_session(self) -> Generator[None]:
         """Ensures local storage directory permissions for QEMU/KVM process."""
         self.storage_dir.mkdir(parents=True, exist_ok=True)
-        try:
-            self.storage_dir.chmod(0o777)
-        except OSError:
-            pass
+        self.storage_dir.chmod(0o777)
         yield
 
     def _get_domain_name(self, node_id: int) -> str:
-        if self.manifest is not None:
-            return f"cabrita-{self.manifest.name}-node{node_id}"
-        prefix = self.settings.libvirt_domain_prefix if self.settings else "cabrita-"
-        return f"{prefix}node{node_id}"
+        if self._get_node_spec(node_id) is None:
+            raise ValueError(f"Undeclared node: {node_id}")
+        return f"cabrita-{self.manifest.name}-node{node_id}"
 
     def _get_domain(self, node_id: int) -> libvirt.virDomain | None:
         dom_name = self._get_domain_name(node_id)
@@ -140,11 +112,9 @@ class LibvirtProvider(NodeProvider):
 
     def get_node_ip(self, node_id: int) -> str:
         spec = self._get_node_spec(node_id)
-        if spec:
-            return spec.ip
-        if self.settings is not None:
-            return self.settings.get_node_ip(node_id)
-        return f"192.168.122.10{node_id}"
+        if spec is None:
+            raise ValueError(f"Undeclared node: {node_id}")
+        return spec.ip
 
     def power_on(self, node_id: int) -> bool:
         dom = self._get_domain(node_id)

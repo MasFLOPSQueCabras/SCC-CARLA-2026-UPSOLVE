@@ -11,7 +11,6 @@ import yaml
 from cabrita.core.bootstrap import CustomPreparer, PreparationSpec
 from cabrita.core.di import create_registry
 from cabrita.core.resolved import ResolvedCluster
-from cabrita.providers.chameleon import ChameleonProvider
 
 
 @pytest.fixture
@@ -91,8 +90,8 @@ def test_unsupported_provider_method(authoring_manifest: Path) -> None:
     authoring_manifest.write_text(yaml.safe_dump(data))
     with pytest.raises(ValueError, match="does not support cloud-init"):
         ResolvedCluster.load(authoring_manifest)
-    with pytest.raises(NotImplementedError):
-        ChameleonProvider()
+    with pytest.raises(ValueError, match="Unknown provider"):
+        create_registry().get("chameleon")
     assert "chameleon" not in create_registry().list_providers()
 
 
@@ -187,3 +186,14 @@ def test_registries_are_independent() -> None:
     first, second = create_registry(), create_registry()
     first.register("testing", Mock())
     assert not second.is_registered("testing")
+
+
+@pytest.mark.parametrize("provider", ["vm", "bmc", "chi", "chameleon"])
+def test_legacy_provider_names_rejected(authoring_manifest: Path, provider: str):
+    document = yaml.safe_load(authoring_manifest.read_text())
+    document["provider"] = provider
+    authoring_manifest.write_text(yaml.safe_dump(document))
+    with pytest.raises(ValueError):
+        ResolvedCluster.load(authoring_manifest)
+    with pytest.raises(ValueError, match="Unknown provider"):
+        create_registry().get(provider)

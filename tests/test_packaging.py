@@ -37,3 +37,14 @@ def test_packaged_resources() -> None:
     }
     for package, resource in expected.items():
         assert resources.files(package).joinpath(resource).read_text()
+
+
+def test_packaged_profiles_validate(monkeypatch):
+    from cabrita.core.manifest import parse_manifest
+
+    monkeypatch.setenv("CABRITA_BMC_USER", "test-user")
+    monkeypatch.setenv("CABRITA_BMC_PASSWORD", "test-password")
+    for package in ("cabrita.providers.libvirt_backend", "cabrita.providers.helvetios"):
+        for resource in resources.files(package).joinpath("configs").iterdir():
+            if resource.name.endswith(".yaml"):
+                assert parse_manifest(resource.read_text()).nodes

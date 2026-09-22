@@ -44,7 +44,6 @@ def service_context(path: Path) -> Iterator[LifecycleService[ProviderBackend]]:
     settings = ClusterSettings(
         manifest=manifest,
         provider=manifest.provider,
-        node_username=manifest.defaults.os.username,
         bastion_ssh_host=manifest.bastion.ssh_host,
         bastion_http_ip=manifest.bastion.http_bind_ip,
         bastion_http_port=manifest.bastion.http_port,

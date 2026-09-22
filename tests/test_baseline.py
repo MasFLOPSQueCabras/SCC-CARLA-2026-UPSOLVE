@@ -1,18 +1,14 @@
+import hashlib
 from pathlib import Path
-from unittest.mock import Mock
 
 import pytest
-from rich.progress import Progress
 from typer.testing import CliRunner
 
+from cabrita.bootstrap.artifacts import ArtifactCache
 from cabrita.cli import app
-from cabrita.commands import deploy
-from cabrita.config import ClusterSettings
+from cabrita.core.bootstrap import ArtifactSpec
 from cabrita.core.manifest import parse_manifest
-from cabrita.core.parallel import ParallelRunner
-from cabrita.db import NodeLifecycle
-from cabrita.image import ensure_cached_cloud_image
-from cabrita.nodes import resolve_target_nodes
+from cabrita.core.resolved import ResolvedCluster
 
 
 def test_nested_manifest_inheritance(manifest_text: str) -> None:
@@ -37,69 +33,34 @@ def test_duplicate_nodes_rejected(manifest_text: str) -> None:
 
 
 @pytest.mark.parametrize(
-    "targets, expected", [(None, [1, 2, 3]), ([3, 1, 3], [1, 3]), (2, [2])]
+    "targets,expected", [(None, [7, 9]), ([9, 7, 9], [7, 9]), ([9], [9])]
 )
-def test_node_targeting(targets: list[int] | int | None, expected: list[int]) -> None:
-    assert resolve_target_nodes(targets) == expected
+def test_node_targeting(tmp_path: Path, targets, expected):
+    cluster = ResolvedCluster(
+        tmp_path / "cluster.yaml",
+        parse_manifest("""name: targets
+nodes:
+  - {id: 7, hostname: head, ip: 192.0.2.7, mac: '52:54:00:00:00:07'}
+  - {id: 9, hostname: worker, ip: 192.0.2.9, mac: '52:54:00:00:00:09'}
+"""),
+    )
+    assert [node.id for node in cluster.nodes(targets)] == expected
+    with pytest.raises(ValueError, match="Undeclared"):
+        cluster.nodes([99])
 
 
-def test_invalid_target_rejected() -> None:
-    with pytest.raises(ValueError, match="Invalid node"):
-        resolve_target_nodes([1, 99])
-
-
-def test_parallel_failure_is_retained() -> None:
-    error = RuntimeError("provider unavailable")
-
-    def task(node: int) -> int:
-        if node == 2:
-            raise error
-        return node
-
-    results = ParallelRunner[int, int]().items([1, 2]).task(task).run()
-    assert results[1].success
-    assert not results[2].success
-    assert results[2].error is error
-
-
-def test_explicit_artifact_selected(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    cache = tmp_path / "cache"
-    cache.mkdir()
-    artifact = tmp_path / "selected.qcow2"
-    artifact.write_bytes(b"explicit image")
-    monkeypatch.setattr("cabrita.image.get_image_cache_dir", lambda: cache)
-    settings = ClusterSettings(cloud_image_source="missing-default.qcow2")
-    result = ensure_cached_cloud_image(settings, str(artifact))
-    assert result.read_bytes() == artifact.read_bytes()
-    assert result == cache / artifact.name
-
-
-def test_configuration_failure_propagates(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    states = Mock()
-    monkeypatch.setattr(deploy, "update_node_state", states)
-    monkeypatch.setattr(deploy, "is_ssh_authenticated", lambda *a, **kw: True)
-    monkeypatch.setattr(deploy, "configure_command", lambda *a, **kw: False)
-    provider = Mock()
-    provider.provision_node.return_value = True
-    with Progress(disable=True) as progress:
-        succeeded = deploy._provision_single_node(
-            ClusterSettings(),
-            1,
-            "test-key",
-            Mock(),
-            tmp_path,
-            provider,
-            10,
-            progress,
-            progress.add_task("test"),
-            run_ansible=True,
-        )
-    assert not succeeded
-    assert states.call_args.args[2] == NodeLifecycle.BOOTSTRAPPED
+def test_explicit_artifact_selected(tmp_path: Path):
+    source = tmp_path / "selected.qcow2"
+    source.write_bytes(b"explicit image")
+    cache = ArtifactCache(tmp_path / "cache")
+    cache.directory.mkdir()
+    (cache.directory / "default.qcow2").write_bytes(b"unrelated cached image")
+    spec = ArtifactSpec(
+        source=str(source),
+        sha256=hashlib.sha256(source.read_bytes()).hexdigest(),
+        format="qcow2",
+    )
+    assert cache.materialize(spec).read_bytes() == source.read_bytes()
 
 
 def test_deploy_cli_failure_exit(

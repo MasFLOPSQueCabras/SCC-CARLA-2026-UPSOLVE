@@ -11,20 +11,10 @@ from typing import Any, Self
 class ProviderType(StrEnum):
     HELVETIOS = "helvetios"
     LIBVIRT = "libvirt"
-    CHAMELEON = "chameleon"
 
     @classmethod
     def from_string(cls, val: str) -> ProviderType:
-        normalized = val.lower().strip()
-        if normalized in ("bmc", "helvetios"):
-            return cls.HELVETIOS
-        if normalized in ("vm", "libvirt"):
-            return cls.LIBVIRT
-        if normalized in ("chameleon", "chi"):
-            return cls.CHAMELEON
-        raise ValueError(
-            f"Unknown provider '{val}'. Valid options: 'helvetios', 'libvirt', 'chameleon'."
-        )
+        return cls(val.lower().strip())
 
 
 class PowerState(StrEnum):
@@ -54,7 +44,7 @@ class NodeProvider(ABC):
     @property
     @abstractmethod
     def name(self) -> str:
-        """Identifier for provider (e.g. 'helvetios', 'libvirt', 'chameleon')."""
+        """Identifier for provider (e.g. 'helvetios', 'libvirt')."""
 
     @property
     @abstractmethod
@@ -65,18 +55,6 @@ class NodeProvider(ABC):
     def list_presets(cls) -> list[str]:
         """Lists available preset profile names for this provider."""
         return ["standard"]
-
-    @classmethod
-    def get_preset_config(cls, profile: str = "standard") -> str:
-        """Returns the YAML string content of the provider's packaged preset."""
-        raise NotImplementedError(
-            f"Provider '{cls.__name__}' does not implement get_preset_config."
-        )
-
-    @classmethod
-    def get_templates_dir(cls) -> Path | None:
-        """Returns the filesystem Path to the provider's packaged templates."""
-        return None
 
     @contextmanager
     def deployment_session(self) -> Generator[None]:

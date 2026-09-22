@@ -10,7 +10,6 @@ dependencies = [
     "jinja2>=3.1.6",
     "platformdirs>=4.11.11",
     "pydantic-settings>=2.15.0",
-    "pyturso>=0.7.2",
     "pyyaml>=6.0.3",
     "rich>=15.0.0",
     "typer>=0.27.2",
@@ -18,7 +17,7 @@ dependencies = [
 
 [project.optional-dependencies]
 libvirt = ["libvirt-python>=12.0.0"]
-helvetios = ["httpx2[socks]>=2.13.0", "rangehttpserver>=1.4.0"]
+helvetios = ["httpx2[socks]>=2.13.0"]
 all = ["cabrita[libvirt,helvetios]"]
 
 [project.scripts]
