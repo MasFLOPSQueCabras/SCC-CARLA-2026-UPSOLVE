@@ -17,8 +17,8 @@
 
 ISO-only installation, SSH and reboot persistence: passed.
 Basic Ansible and its repeat configuration: passed.
-Full HPL configuration, smoke, performance tuning and final submission are pending.
-No FLOPS result is claimed.
+Full HPL configuration, repeat configuration and three-node smoke: passed.
+Performance tuning and final submission are pending.
 
 ## ISO-stage issues found and repaired
 
@@ -72,7 +72,7 @@ SSH, sudo, network and repository checks. Initial configuration completed with
 changes, zero failures and zero unreachable hosts. All nine peer SSH checks passed.
 Evidence: `basic.UgsiaS/`, including both configuration logs.
 
-## ISO + full HPL setup — in progress
+## ISO + full HPL setup — passed
 
 Fresh installation started at 17:46 UTC. Source builds use 36 jobs on the head node.
 The user confirmed a deadline two hours after 17:43:32 UTC: **19:43:32 UTC today**.
@@ -107,3 +107,39 @@ and zero skipped tests. Evidence is in `smoke/` and `/shared/hpl/results/smoke`.
 The source collector now uses Spack's `spack-src` subdirectory and accommodates
 pre-1980 source timestamps in ZIP metadata. Build evidence and the modified HPL
 source archive were collected successfully.
+
+## Complete setup repeat and package replay — passed 18:59 UTC
+
+The final full-stage run is `hpl.ZPtf7B/`. Repeat configuration returned
+node1 `ok=49 changed=0` and node2/node3 `ok=35 changed=0`, with no failed or
+unreachable hosts. All final node verifications passed. A package assembled from
+the smoke result passed checksums and replayed successfully on the installed
+cluster. Local validation: 126 passed, 13 infrastructure tests skipped; lint,
+type checks, Bash syntax and source/wheel build passed.
+
+Tuning started at 18:59 UTC with a 1,700-second cap and the three InfiniBand IPs.
+The sweep compares 36×1, 2×18 and 4×9 ranks×threads per node; NB 128/192/256/384;
+two process grids; and alternative process ordering for the strongest layouts.
+
+## Compiler, BLAS and MPI comparison — passed 19:18 UTC
+
+The baseline sweep produced 26 valid screening results; its best was 3205.2
+GFLOPS at N=32256, NB=256, grid 6×18, 36 MPI ranks per node and one thread per
+rank. The larger original case lost its controller session before the runner
+recorded exit status and is excluded. A detached rerun was started at 19:19 UTC.
+
+All three Intel-library variants were built locally from verified Netlib HPL 2.3
+source. Each passed its smoke and all three layout comparisons. At N=32256,
+NB=256 and the strongest 108-rank 6×18 layout, measured results were:
+
+| Compiler / BLAS / MPI | GFLOPS |
+| --- | ---: |
+| GCC 14.3.1 / OpenBLAS 0.3.28 / OpenMPI 5.0.5 | 3205.2 |
+| GCC 14.3.1 / oneMKL 2026.1 / OpenMPI 5.0.5 | 3076.0 |
+| icx 2026.1.1 / oneMKL 2026.1 / OpenMPI 5.0.5 | 3080.4 |
+| icx 2026.1.1 / oneMKL 2026.1 / Intel MPI 2021.18 | 2924.5 |
+
+Intel MPI used OFI mlx; OpenMPI used source-built UCX RC. The two hybrid layouts
+(2×18 and 4×9 ranks×threads per node) were slower in this screen. Compiler and
+library packages are permitted by the user's clarification; no vendor HPL
+executable was used. Detailed attempts remain in `oneapi-comparison/`.

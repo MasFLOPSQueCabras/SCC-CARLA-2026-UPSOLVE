@@ -80,7 +80,10 @@ def test_generated_case_matches_launched_grid(dat):
 
 
 @pytest.mark.parametrize("status", [0, 7])
-def test_eval_captures_mpi_failure_and_preserves_results(tmp_path, dat, output, status):
+@pytest.mark.parametrize("implementation", ["openmpi", "intel"])
+def test_eval_captures_mpi_failure_and_preserves_results(
+    tmp_path, dat, output, status, implementation
+):
     import shlex
     import subprocess
 
@@ -112,6 +115,7 @@ exit "$FAKE_STATUS"
         "HPL_LOCK_FILE": tmp_path / "eval.lock",
         "FAKE_OUTPUT": fixture,
         "FAKE_STATUS": status,
+        "MPI_IMPLEMENTATION": implementation,
     }
     settings.write_text(
         "\n".join(f"export {k}={shlex.quote(str(v))}" for k, v in values.items())
@@ -128,6 +132,8 @@ exit "$FAKE_STATUS"
         command, capture_output=True, text=True, check=False, timeout=15
     )
     assert process.returncode == status, process.stderr
+    if implementation == "intel":
+        assert (destination / "hosts.intel").read_text() == "node1\nnode2\nnode3\n"
     assert (destination / "HPL.err").read_text() == "MPI diagnostic\n"
     assert (destination / "exit-status.txt").read_text().strip() == str(status)
     assert (destination / "result.json").exists() is (status == 0)
@@ -191,7 +197,10 @@ nodes:
     assert "xorriso" in checked
 
 
-def test_submission_packages_one_valid_result_with_source(tmp_path, dat, output):
+@pytest.mark.parametrize("custom_build", [False, True])
+def test_submission_packages_one_valid_result_with_source(
+    tmp_path, dat, output, custom_build
+):
     import subprocess
     import sys
 
@@ -223,6 +232,10 @@ def test_submission_packages_one_valid_result_with_source(tmp_path, dat, output)
         "source-changes.md",
     ):
         (build / name).write_text("test fixture\n")
+    if custom_build:
+        (build / "build-description.md").write_text(
+            "Self-built HPL with oneMKL fixture."
+        )
     package = tmp_path / "submission"
     command = [
         sys.executable,
@@ -238,7 +251,11 @@ def test_submission_packages_one_valid_result_with_source(tmp_path, dat, output)
     assert (package / "input/HPL.dat").read_text() == dat
     assert (package / "output/HPL.out").read_text() == output
     assert (package / "src/modified_source.zip").is_file()
-    assert "cabritactl" in (package / "README.md").read_text()
+    readme = (package / "README.md").read_text()
+    assert "cabritactl" in readme
+    if custom_build:
+        assert "Self-built HPL with oneMKL fixture." in readme
+        assert "OpenBLAS 0.3.28" not in readme
     assert not (package / "scripts/build-evidence/modified_source.zip").exists()
     checked = subprocess.run(
         ["sha256sum", "--check", "SHA256SUMS"],

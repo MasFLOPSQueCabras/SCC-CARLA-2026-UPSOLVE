@@ -110,7 +110,8 @@ is a maximum: reduce `--seconds` to fit the submission deadline, reserving time
 for packaging, replay validation and delivery. For the 2026-09-23 run, the user
 confirmed a deadline of 19:43:32 UTC.
 It compares physical-core MPI and NUMA-aware hybrid layouts, block sizes
-128/192/256/384, and two near-square grids. Larger matrices are limited by available
+128/192/256/384, and two near-square grids. It also compares column-major process
+ordering for the strongest layouts. Larger matrices are limited by available
 memory, workspace reserve, measured speed and remaining runtime. Every attempt
 has its own immutable input, settings, command, logs, and status. The best result
 is chosen only from complete runs passing the residual threshold of 16.0.
@@ -132,3 +133,24 @@ If HPL source or a recipe patch changes HPL source, include `src/modified_source
 and `src/README.md` describing the changes. Preserve an existing bastion submission
 before replacement, copy this single selected result to `~/submission`, and run
 `sha256sum --check SHA256SUMS` there. Keep other attempts outside that directory.
+
+## Intel library/compiler/MPI comparison
+
+The user confirmed that vendor compiler and libraries are allowed when HPL is
+built from source. On node1, `scripts/helvetios-oneapi-setup.sh` installs signed,
+pinned oneMKL 2026.1.0, icx 2026.1.1 and Intel MPI 2021.18.1 into shared storage.
+Copy the scripts to `/shared/hpl/oneapi-scripts`, then run on node1:
+
+```bash
+bash /shared/hpl/oneapi-scripts/helvetios-oneapi-setup.sh
+for variant in gcc-mkl-openmpi icx-mkl-openmpi icx-mkl-intelmpi; do
+  bash /shared/hpl/oneapi-scripts/hpl-build-oneapi.sh "$variant"
+done
+python3 /shared/hpl/oneapi-scripts/hpl-oneapi-checks.py /shared/hpl/oneapi-comparison
+```
+
+Each executable is compiled from checksum-verified Netlib HPL 2.3. The scripts
+record flags and linkage, run smoke checks, and compare three rank/thread layouts.
+Keep these alternatives separate from the winning result; select by measured
+GFLOPS and a passing residual, not by library brand. Build directories and result
+directories must be new; existing measurements are never overwritten.

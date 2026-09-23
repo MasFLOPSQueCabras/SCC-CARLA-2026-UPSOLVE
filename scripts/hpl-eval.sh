@@ -22,6 +22,7 @@ exec 9>"${HPL_LOCK_FILE:-/shared/hpl/.evaluation.lock}"
 flock --nonblock 9 || { echo 'Another HPL evaluation is active' >&2; exit 1; }
 cp -- "$MPI_HOSTFILE" "$result/hosts"
 export OMP_NUM_THREADS OPENBLAS_NUM_THREADS=$OMP_NUM_THREADS
+export MKL_NUM_THREADS=$OMP_NUM_THREADS MKL_DYNAMIC=FALSE
 export OMP_PROC_BIND=close OMP_PLACES=cores
 export UCX_NET_DEVICES UCX_TLS=rc,sm,self
 export PATH="$(dirname -- "$MPI_LAUNCHER"):$PATH"
@@ -38,11 +39,21 @@ python3 "$script_dir/hpl-result.py" input HPL.dat "$HPL_RANKS"
     printf 'OMP_NUM_THREADS=%s\nMPI_MAP_BY=%s\nUCX_NET_DEVICES=%s\n' \
         "$OMP_NUM_THREADS" "$MPI_MAP_BY" "$UCX_NET_DEVICES"
 } > metadata.txt 2>&1
-command=("$MPI_LAUNCHER" -np "$HPL_RANKS" --hostfile "$result/hosts"
+if [[ ${MPI_IMPLEMENTATION:-openmpi} == intel ]]; then
+    awk '{print $1}' "$result/hosts" > "$result/hosts.intel"
+    export I_MPI_PIN_DOMAIN=${I_MPI_PIN_DOMAIN:-omp:compact} I_MPI_PIN_CELL=core
+    export I_MPI_PIN_ORDER=compact I_MPI_DEBUG=5 I_MPI_FABRICS=shm:ofi
+    export I_MPI_OFI_PROVIDER=mlx I_MPI_HYDRA_IFACE=${MPI_CONTROL_INTERFACE:-ibs5f0}
+    command=("$MPI_LAUNCHER" -np "$HPL_RANKS" -ppn "$((HPL_RANKS / 3))"
+        -f "$result/hosts.intel" -genvall "$HPL_BINARY")
+else
+    command=("$MPI_LAUNCHER" -np "$HPL_RANKS" --hostfile "$result/hosts"
     --map-by "$MPI_MAP_BY" --bind-to core --report-bindings
     --mca pml ucx -x PATH -x LD_LIBRARY_PATH -x OMP_NUM_THREADS
-    -x OPENBLAS_NUM_THREADS -x OMP_PROC_BIND -x OMP_PLACES -x UCX_NET_DEVICES -x UCX_TLS
+    -x OPENBLAS_NUM_THREADS -x MKL_NUM_THREADS -x MKL_DYNAMIC
+    -x OMP_PROC_BIND -x OMP_PLACES -x UCX_NET_DEVICES -x UCX_TLS
     "$HPL_BINARY")
+fi
 printf '%q ' "${command[@]}" > command.txt
 printf '\n' >> command.txt
 set +e

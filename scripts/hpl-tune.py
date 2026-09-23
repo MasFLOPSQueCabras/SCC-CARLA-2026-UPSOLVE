@@ -29,9 +29,9 @@ def matrix_limit(
     return int(math.sqrt(memory * nodes * fraction * 0.9 / 8)) // alignment * alignment
 
 
-def write_input(template: str, n: int, nb: int, p: int, q: int) -> str:
+def write_input(template: str, n: int, nb: int, p: int, q: int, pmap: int = 0) -> str:
     lines = template.splitlines()
-    for index, value in ((5, n), (7, nb), (10, p), (11, q)):
+    for index, value in ((5, n), (7, nb), (8, pmap), (10, p), (11, q)):
         lines[index] = str(value)
     text = "\n".join(lines) + "\n"
     HELPERS["input_case"](text)
@@ -101,7 +101,7 @@ def main() -> None:
     records = []
     attempt = 0
 
-    def execute(layout, nb, p, q, n, allowance):
+    def execute(layout, nb, p, q, n, allowance, pmap=0):
         nonlocal attempt
         remaining = deadline - time.monotonic()
         timeout = int(min(allowance, remaining - 20))
@@ -114,7 +114,7 @@ def main() -> None:
         hosts = case_dir / "hosts"
         hosts.write_text("".join(f"{host} slots={rpn}\n" for host in args.hosts))
         dat = case_dir / "HPL.dat"
-        dat.write_text(write_input(template, n, nb, p, q))
+        dat.write_text(write_input(template, n, nb, p, q, pmap))
         env = case_dir / "settings.sh"
         env.write_text(
             settings
@@ -132,7 +132,7 @@ def main() -> None:
             + "\n"
         )
         print(
-            f"Run {attempt}: N={n}, NB={nb}, grid={p}x{q}, ranks/node={rpn}, threads={threads}, timeout={timeout}s",
+            f"Run {attempt}: N={n}, NB={nb}, grid={p}x{q}, PMAP={pmap}, ranks/node={rpn}, threads={threads}, timeout={timeout}s",
             flush=True,
         )
         with (case_dir / "launcher.log").open("w") as log:
@@ -148,13 +148,14 @@ def main() -> None:
                 check=False,
             )
         record = {
-            "directory": str(case_dir.resolve()),
+            "directory": str((case_dir / "run").resolve()),
             "exit_status": process.returncode,
             "layout": layout,
             "nb": nb,
             "p": p,
             "q": q,
             "n": n,
+            "pmap": pmap,
         }
         if process.returncode == 0:
             record["result"] = HELPERS["result"](
@@ -186,6 +187,29 @@ def main() -> None:
     )
     if not valid:
         raise SystemExit("No valid HPL result; inspect attempt logs before continuing")
+    # Compare column-major rank ordering for the two strongest distinct layouts.
+    checked = set()
+    for candidate in valid:
+        layout = tuple(candidate["layout"])
+        if layout in checked:
+            continue
+        if len(checked) == 2 or time.monotonic() >= screen_end - 30:
+            break
+        checked.add(layout)
+        execute(
+            layout,
+            candidate["nb"],
+            candidate["p"],
+            candidate["q"],
+            candidate["n"],
+            min(600, screen_end - time.monotonic() - 20),
+            pmap=1,
+        )
+    valid = sorted(
+        (r for r in records if "result" in r),
+        key=lambda r: r["result"]["gflops"],
+        reverse=True,
+    )
     # Two large candidates and a repeat. Size each to fit the remaining budget.
     for index, fraction in enumerate((0.7, 0.8, 0.8)):
         best = (
@@ -211,7 +235,7 @@ def main() -> None:
             if best["result"]["seconds"] * 1.5 > allowance:
                 break
             n = best["n"]
-        execute(tuple(best["layout"]), nb, p, q, n, allowance)
+        execute(tuple(best["layout"]), nb, p, q, n, allowance, pmap=best["pmap"])
     (args.output / "elapsed-seconds.txt").write_text(
         f"{time.monotonic() - start:.3f}\n"
     )

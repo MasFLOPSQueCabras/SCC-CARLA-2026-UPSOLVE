@@ -76,6 +76,20 @@ exec bash "$SUBMISSION_ROOT/scripts/hpl-eval.sh" "$SUBMISSION_ROOT/input/HPL.dat
         args.build_evidence / "modified_source.zip", dest / "src/modified_source.zip"
     )
     shutil.copy2(args.build_evidence / "source-changes.md", dest / "src/README.md")
+    description = args.build_evidence / "build-description.md"
+    build_description = (
+        description.read_text()
+        if description.is_file()
+        else """HPL 2.3, OpenMPI 5.0.5 with UCX, and OpenBLAS 0.3.28 are built using the pinned
+Spack recipes and GCC C/Fortran compilers. OpenBLAS uses OpenMP threading and
+the detected CPU target. UCX enables InfiniBand verbs, RC, UD, mlx5 direct verbs,
+device memory and CMA. `scripts/build-evidence/spack.lock` records exact transitive
+versions, variants and target architecture. `compiler.txt`, `spack-config.txt`,
+`hpl-libraries.txt` and `spack-build-records.tar.gz` record compilers, build flags,
+build environments and logs. No vendor HPL binary is used. The pinned Spack recipe rewrites the HPL configure
+script’s BLAS probe. `src/modified_source.zip` contains that build-source tree;
+`src/README.md` explains the change. The numerical algorithm is unchanged."""
+    )
     (dest / "README.md").write_text(f"""# SCC@CARLA — team 72, Helvetios
 
 Selected completed result: **{result["gflops"]:.6g} GFLOPS**; elapsed HPL time
@@ -103,15 +117,7 @@ source-built Spack stack; binary caches are disabled.
 
 ## Build and launch details
 
-HPL 2.3, OpenMPI 5.0.5 with UCX, and OpenBLAS 0.3.28 are built using the pinned
-Spack recipes and GCC C/Fortran compilers. OpenBLAS uses OpenMP threading and
-the detected CPU target. UCX enables InfiniBand verbs, RC, UD, mlx5 direct verbs,
-device memory and CMA. `scripts/build-evidence/spack.lock` records exact transitive
-versions, variants and target architecture. `compiler.txt`, `spack-config.txt`,
-`hpl-libraries.txt` and `spack-build-records.tar.gz` record compilers, build flags,
-build environments and logs. No vendor HPL binary is used. The pinned Spack recipe rewrites the HPL configure
-script’s BLAS probe. `src/modified_source.zip` contains that build-source tree;
-`src/README.md` explains the change. The numerical algorithm is unchanged.
+{build_description}
 
 On the installed head node, with the shared installation at its original paths:
 
