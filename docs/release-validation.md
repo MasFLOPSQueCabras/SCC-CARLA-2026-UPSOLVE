@@ -81,3 +81,57 @@ manifest validation, and packaged-resource checks. Both provider extras installe
 and imported in a clean Python 3.14 container. The wheel exposes only the
 `cabritactl` executable and Python package; there is no `cabrita` alias.
 Rename-specific deployment logs are under `test-results/cabritactl-rename`.
+
+## Managed host workflow (2026-09-23)
+
+The host workflow adds explicit setup previews/apply, managed libvirt storage,
+cluster-owned NAT networks, structured preflight checks, guest peer firewall
+reconciliation, and scoped host firewall rules. There is no legacy migration.
+
+Validation evidence:
+
+- The unit suite passes 100 tests, including allocation conflicts, unowned-resource
+  protection, interrupted volume uploads, shared artifact retention, firewall
+  receipts, setup previews, executable discovery, and firmware selection.
+- Fedora 44 with SELinux enforcing passed the three-node BIOS workload. The
+  corrected UEFI run passed SSH, guest DNS/HTTPS, NFS, three-rank MPI, numerical
+  HPL, stopped-disk export, cache removal, restart, and repeated `up`. That run's
+  final cleanup encountered a fresh libvirt/polkit connection timeout; its exact
+  test resources were subsequently removed and an empty VM list verified.
+  The test now reuses its existing authorized connection for cleanup.
+- Ubuntu 26.04.1 with AppArmor enabled passed both BIOS and UEFI managed-host
+  tests (2 tests, 271.80 seconds). The UEFI run initially exposed libvirt selecting
+  a monolithic AMD-SEV ROM rejected by `virt-aa-helper`; explicit split CODE/VARS
+  selection fixes it without changing AppArmor policy.
+- Test VMs, networks and pools were removed on both hosts. The existing Ubuntu
+  showcase remains running and unchanged.
+- Ruff, formatting, type checking, packaged Ansible syntax, and wheel/sdist
+  builds were checked during implementation.
+
+Local logs are under `test-results/managed-host`, `test-results/managed-host-fixed`
+and `test-results/ubuntu-host-validation`. Test command:
+
+```bash
+uv run pytest tests/e2e/test_managed_host.py --run-e2e \
+  --cloud-image /path/to/Rocky-cloud.qcow2 --e2e-log-dir test-results/managed-host
+```
+
+The real UFW adapter test uses a disposable Ubuntu 26.04 rootless container with
+`NET_ADMIN`, not the host firewall. It validates rule creation, repeatability,
+recovery HTTP scoping, ownership receipts, preservation of an unrelated rule,
+cleanup, and detection of inactive UFW's empty residual chains. It models only
+libvirt's already-destroyed-network query; UFW and
+its kernel rules are real.
+
+```bash
+uv build
+uv run pytest tests/e2e/test_ufw_container.py --run-e2e \
+  --e2e-log-dir test-results/ufw
+```
+
+The VM hosts already had native prerequisites installed. Complete package/service
+setup on pristine installations was not exercised. The UFW container does not
+substitute for a full libvirt VM traffic test on a UFW-managed host. The full
+installer/golden-restore matrix has not been rerun for this change; the new tests
+exercise cloud-init and stopped-disk export. Physical Helvetios limitations above
+continue to apply.

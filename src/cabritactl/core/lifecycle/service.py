@@ -135,7 +135,7 @@ class LifecycleService[BackendT: LifecycleBackend]:
         checkpoint = self.state.read(node.id)
         if operation in ("down", "destroy"):
             if operation == "destroy" and checkpoint.phase == "new":
-                return "unmanaged"
+                return "unmanaged" if observed.exists else "noop"
             return operation if observed.exists else "noop"
         if (
             checkpoint.phase != "new"
@@ -194,7 +194,11 @@ class LifecycleService[BackendT: LifecycleBackend]:
                 checkpoint = self.state.read(node.id)
                 checkpoint.error = str(exc)
                 self.state.write(node.id, checkpoint)
-                return exc
+                return RuntimeError(
+                    f"Node {node.id} ({node.hostname}), phase {checkpoint.phase}: {exc}. "
+                    f"Logs: {self.state.directory / 'work'}. "
+                    "Run cabritactl doctor --cluster " + str(self.cluster.source)
+                )
 
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
             failures = [

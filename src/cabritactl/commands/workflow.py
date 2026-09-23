@@ -2,11 +2,14 @@
 
 import hashlib
 import json
+import re
 import shutil
+import subprocess
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import asdict
 from importlib.resources import files
+from ipaddress import ip_network
 from pathlib import Path
 from typing import Annotated
 
@@ -58,7 +61,7 @@ def service_context(path: Path) -> Iterator[LifecycleService[ProviderBackend]]:
             cluster,
             provider,
             state,
-            cache_root / "clusters" / cluster.identity,
+            cluster.state_directory(state_root) / "work",
             manifest.access.public_key,
             manifest.access.private_key,
             manifest.access.timeout,
@@ -77,13 +80,37 @@ def service_context(path: Path) -> Iterator[LifecycleService[ProviderBackend]]:
 
 
 def _error(exc: Exception) -> None:
-    typer.echo(str(exc), err=True)
+    def describe(error: BaseException) -> None:
+        if isinstance(error, BaseExceptionGroup):
+            for child in error.exceptions:
+                describe(child)
+            return
+        text = str(error)
+        typer.echo(text, err=True)
+        if "apparmor" in text.lower():
+            typer.echo(
+                "Inspect virt-aa-helper and per-domain denials with sudo journalctl -k and the libvirt service journal. Keep AppArmor enabled; use managed storage and ordinary split UEFI firmware.",
+                err=True,
+            )
+        elif "permission denied" in text.lower():
+            typer.echo(
+                "Check directory traversal and pool permissions, then SELinux AVC/AppArmor denials. A chmod change cannot override mandatory access control. See docs/host-installation.md.",
+                err=True,
+            )
+
+    describe(exc)
     raise typer.Exit(1) from exc
 
 
 def init(
     directory: Annotated[Path, typer.Argument()] = Path("."),
     provider: Annotated[str, typer.Option("--provider")] = "libvirt",
+    network: Annotated[
+        str,
+        typer.Option(
+            "--network", help="managed NAT or existing network (offline authoring)"
+        ),
+    ] = "managed",
     artifact: Annotated[
         Path | None,
         typer.Option(
@@ -104,6 +131,39 @@ def init(
     if destination.exists():
         raise typer.BadParameter(f"Manifest already exists: {destination}")
     document = yaml.safe_load(files(package).joinpath("configs", filename).read_text())
+    if provider == "libvirt":
+        if network not in ("managed", "existing"):
+            raise typer.BadParameter("--network must be managed or existing")
+        document["name"] = re.sub(r"[^a-z0-9-]", "-", directory.name.lower())[:40]
+        if not document["name"] or not document["name"][0].isalpha():
+            document["name"] = "cluster-" + document["name"]
+        if network == "managed":
+            try:
+                import libvirt
+
+                from cabritactl.providers.libvirt_backend.network import author_network
+
+                connection = libvirt.openReadOnly(ClusterSettings().libvirt_uri)
+                if connection is None:
+                    raise RuntimeError("Cannot connect to libvirt")
+                try:
+                    document["network"].update(
+                        author_network(connection, document["name"])
+                    )
+                finally:
+                    connection.close()
+            except Exception as exc:
+                raise typer.BadParameter(
+                    f"Managed network discovery failed: {exc}. Run host setup, or use --network existing for offline authoring."
+                ) from exc
+            subnet = ip_network(document["network"]["subnet"])
+            prefix = hashlib.sha256(document["name"].encode()).hexdigest()[:6]
+            for i, node in enumerate(document["nodes"], 101):
+                node["ip"] = str(subnet[i])
+                node["mac"] = f"52:54:{prefix[:2]}:{prefix[2:4]}:{prefix[4:6]}:{i:02x}"
+        document["defaults"]["vm"]["graphics"] = "none"
+        for node in document["nodes"]:
+            node.pop("vm", None)
     method = "cloud-init" if provider == "libvirt" else "embedded-kickstart"
     document["bootstrap"] = {
         "method": method,
@@ -155,31 +215,23 @@ def doctor(
 ) -> None:
     """Check local prerequisites and provider access before execution."""
     try:
-        resolved = ResolvedCluster.load(cluster)
-        required = ["ssh", "ansible-playbook"]
-        if resolved.manifest.provider == "libvirt":
-            required.extend(["qemu-img", "virsh", "xorriso"])
-        if resolved.manifest.bootstrap.method == "oemdrv":
-            required.extend(["mkfs.vfat", "mcopy"])
-        problems = [
-            f"Missing executable: {tool}"
-            for tool in required
-            if shutil.which(tool) is None
-        ]
-        for path in (
-            resolved.manifest.access.public_key,
-            resolved.manifest.access.private_key,
-        ):
-            if not path.is_file():
-                problems.append(f"Missing SSH key: {path}")
-        with service_context(cluster) as service:
-            service.plan()
+        from cabritactl.host.doctor import collect, report
+
+        result = report(collect(ResolvedCluster.load(cluster)))
         typer.echo(
-            json.dumps({"ok": not problems, "problems": problems})
+            json.dumps(result, indent=2)
             if json_output
-            else "\n".join(problems) or "Prerequisites available"
+            else "\n".join(
+                f"{c['status'].upper()} {c['name']}: {c['detail']}"
+                + (
+                    f"\n  Fix: {c['remedy']}"
+                    if c["remedy"] and c["status"] != "pass"
+                    else ""
+                )
+                for c in result["checks"]
+            )
         )
-        if problems:
+        if not result["ok"]:
             raise typer.Exit(1)
     except (ValueError, OSError, RuntimeError) as exc:
         _error(exc)
@@ -227,8 +279,32 @@ def _execute(
                 typer.confirm(
                     f"Execute {operation} for {len(entries)} node(s)?", abort=True
                 )
+            if operation in ("up", "deploy"):
+                from cabritactl.host.doctor import collect, report
+
+                preflight = report(collect(service.cluster))
+                if not preflight["ok"]:
+                    raise RuntimeError(
+                        "Preflight failed:\n"
+                        + "\n".join(preflight["problems"])
+                        + "\nRun cabritactl doctor --cluster "
+                        + str(cluster)
+                    )
             service.execute(operation, node, reinstall=reinstall)
-    except (ValueError, OSError, RuntimeError, ExceptionGroup) as exc:
+            if (
+                operation == "destroy"
+                and service.cluster.manifest.provider == "libvirt"
+            ):
+                cleanup = getattr(service.backend.provider, "cleanup_network", None)
+                if cleanup is not None:
+                    cleanup()
+    except (
+        ValueError,
+        OSError,
+        RuntimeError,
+        ExceptionGroup,
+        subprocess.SubprocessError,
+    ) as exc:
         _error(exc)
 
 
@@ -322,6 +398,9 @@ def verify(
     cluster: ClusterOption = Path("cluster.yaml"),
     node: NodeOption = None,
     json_output: JsonOption = False,
+    network: Annotated[
+        bool, typer.Option("--network", help="Also check guest networking, NFS and MPI")
+    ] = False,
 ) -> None:
     """Verify SSH access for every selected node, failing on any unreachable node."""
     results = []
@@ -333,6 +412,14 @@ def verify(
                     results.append({"id": item.id, "ok": True})
                 except (OSError, RuntimeError) as exc:
                     results.append({"id": item.id, "ok": False, "error": str(exc)})
+        if network:
+            from cabritactl.host.doctor import runtime_checks
+
+            checks = runtime_checks(ResolvedCluster.load(cluster))
+            results.extend(
+                {"check": c.name, "ok": c.status == "pass", "detail": c.detail}
+                for c in checks
+            )
         typer.echo(
             json.dumps(results, indent=2)
             if json_output

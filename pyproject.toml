@@ -1,6 +1,6 @@
 [project]
 name = "cabritactl"
-version = "1.0.0"
+version = "1.0.1.dev1"
 description = "Authorable clusters on libvirt and Helvetios"
 readme = "README.md"
 authors = [{ name = "Isaac David", email = "orpheezt@outlook.com" }]

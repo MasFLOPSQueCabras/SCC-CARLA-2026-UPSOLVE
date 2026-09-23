@@ -69,7 +69,12 @@ class HardwareSpec(BaseModel):
     infiniband_interface: str = "ib0"
 
 
+class LibvirtSpec(BaseModel):
+    storage_pool: str = Field(default="cabrita", pattern=r"^[a-zA-Z0-9_-]+$")
+
+
 class NetworkSpec(BaseModel):
+    managed: bool = False
     bridge: str = "virbr0"
     network_name: str = "default"
     subnet: str = "192.168.122.0/24"
@@ -125,6 +130,7 @@ class ClusterManifest(BaseModel):
     artifacts: dict[str, ArtifactSpec] = Field(default_factory=dict)
     configuration: ConfigurationSpec = Field(default_factory=ConfigurationSpec)
     template_inputs: dict[str, Any] = Field(default_factory=dict)
+    libvirt: LibvirtSpec = Field(default_factory=LibvirtSpec)
     network: NetworkSpec = Field(default_factory=NetworkSpec)
     bastion: BastionSpec = Field(default_factory=BastionSpec)
     defaults: ClusterDefaults = Field(default_factory=ClusterDefaults)
@@ -136,6 +142,7 @@ class ClusterManifest(BaseModel):
         seen_ids = set()
         seen_hosts = set()
         seen_ips = set()
+        seen_macs = set()
         for node in nodes:
             if node.id in seen_ids:
                 raise ValueError(f"Duplicate node id: {node.id}")
@@ -146,4 +153,9 @@ class ClusterManifest(BaseModel):
             if node.ip in seen_ips:
                 raise ValueError(f"Duplicate IP: {node.ip}")
             seen_ips.add(node.ip)
+            if node.mac:
+                mac = node.mac.lower()
+                if mac in seen_macs:
+                    raise ValueError(f"Duplicate MAC: {mac}")
+                seen_macs.add(mac)
         return nodes

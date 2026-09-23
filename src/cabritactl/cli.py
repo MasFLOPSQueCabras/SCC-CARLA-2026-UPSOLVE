@@ -5,6 +5,7 @@ from rich.console import Console
 
 from cabritactl import __version__
 from cabritactl.commands import maintenance, workflow
+from cabritactl.commands.host import host_app
 from cabritactl.commands.image import image_app
 from cabritactl.commands.provider import provider_app
 
@@ -38,6 +39,7 @@ def options(
 # Mount modular sub-apps
 app.add_typer(provider_app, name="provider")
 app.add_typer(image_app, name="image")
+app.add_typer(host_app, name="host")
 
 # Register root commands
 app.command(

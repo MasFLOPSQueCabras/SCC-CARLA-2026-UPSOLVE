@@ -27,11 +27,14 @@ jobs:
       - name: Validate authoring workflow
         run: |
           sudo systemctl start libvirtd.socket
-          sudo chmod a+rw /var/run/libvirt/libvirt-sock
+          sudo usermod -aG libvirt "$USER"
+          sudo virsh -c qemu:///system pool-define-as cabrita dir --target /var/lib/libvirt/images/cabrita
+          sudo virsh -c qemu:///system pool-build cabrita
+          sudo virsh -c qemu:///system pool-start cabrita
           touch /tmp/cabrita-plan-fixture.qcow2
-          uv run cabritactl init /tmp/cabrita-plan --artifact /tmp/cabrita-plan-fixture.qcow2
+          uv run cabritactl init /tmp/cabrita-plan --network existing --artifact /tmp/cabrita-plan-fixture.qcow2
           uv run cabritactl validate --cluster /tmp/cabrita-plan/cluster.yaml
-          uv run cabritactl plan --cluster /tmp/cabrita-plan/cluster.yaml --json
-          uv run cabritactl up --dry-run --cluster /tmp/cabrita-plan/cluster.yaml
+          sg libvirt -c "uv run cabritactl plan --cluster /tmp/cabrita-plan/cluster.yaml --json"
+          sg libvirt -c "uv run cabritactl up --dry-run --cluster /tmp/cabrita-plan/cluster.yaml"
       - name: Build distribution
         run: uv build

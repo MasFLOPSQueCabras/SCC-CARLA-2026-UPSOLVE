@@ -10,6 +10,8 @@ Ansible playbooks. Shared HPC profiles provide NFS, MPI, and numerical HPL
 validation. Repeated `up` preserves installed disks; replacement requires
 `--reinstall`.
 
+See [Fedora 44 / Ubuntu 26.04 host setup](docs/host-installation.md) for native packages, managed networking, firewall rules, SELinux and AppArmor.
+
 ## Install
 
 Python 3.14 or newer is required. The distribution and command are `cabritactl`.

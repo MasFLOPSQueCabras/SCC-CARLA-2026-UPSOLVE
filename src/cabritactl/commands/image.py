@@ -44,10 +44,14 @@ def capture_command(
                 storage = provider.paths.storage_dir
                 if storage is None:
                     raise ValueError("Provider has no managed disk storage")
-                source = storage / f"{service.cluster.resource_name(selected)}.qcow2"
                 output = output.expanduser().resolve()
                 output.parent.mkdir(parents=True, exist_ok=True)
-                with artifact_lock(output.with_suffix(".capture.lock")):
+                with (
+                    artifact_lock(output.with_suffix(".capture.lock")),
+                    provider.capture_source(
+                        node, service.cluster.resource_name(selected)
+                    ) as source,
+                ):
                     metadata = capture(
                         source,
                         output,

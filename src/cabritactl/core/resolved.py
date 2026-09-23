@@ -94,6 +94,10 @@ class ResolvedCluster:
         manifest = self.manifest
         if not manifest.nodes:
             raise ValueError("Cluster must declare at least one node")
+        if manifest.provider == "libvirt" and manifest.network.managed:
+            from cabritactl.providers.libvirt_backend.network import validate_network
+
+            validate_network(manifest)
         method = manifest.bootstrap.method
         match manifest.provider, method:
             case "libvirt", _:

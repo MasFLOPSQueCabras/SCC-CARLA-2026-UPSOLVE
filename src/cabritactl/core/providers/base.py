@@ -95,6 +95,9 @@ class NodeProvider(ABC):
     def set_bios_settings(self, node_id: int, attributes: dict[str, Any]) -> bool:
         raise NotImplementedError("Provider does not support BIOS settings")
 
+    def node_defined(self, node_id: int) -> bool:
+        return self.node_exists(node_id)
+
     def node_exists(self, node_id: int) -> bool:
         raise NotImplementedError("Provider must implement resource discovery")
 
@@ -118,6 +121,15 @@ class NodeProvider(ABC):
     @abstractmethod
     def teardown_node(self, node_id: int) -> bool:
         """Decommissions or tears down the target node."""
+
+    @contextmanager
+    def capture_source(self, node_id: int, name: str):
+        if self.paths.storage_dir is None:
+            raise ValueError("Provider has no disk storage")
+        yield self.paths.storage_dir / f"{name}.qcow2"
+
+    def cleanup_network(self) -> None:
+        """Remove a provider-owned network after its final domain is removed."""
 
     def close(self) -> None:
         """Closes any underlying connections or client sessions."""

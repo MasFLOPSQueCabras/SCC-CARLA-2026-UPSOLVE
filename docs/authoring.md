@@ -54,3 +54,14 @@ as an executable argument, such as `sh -c`.
 
 Chameleon/OpenStack is future work. It raises an unsupported-provider error;
 no operation reports simulated success.
+
+## Managed local resources
+
+New libvirt workspaces use `network.managed: true`. Subnet, bridge, network name,
+node IPs and MACs are explicit in the generated manifest. `init --network existing`
+preserves offline authoring for administrator-managed networks. Omitted `managed`
+means external; Cabrita does not modify such networks.
+
+`libvirt.storage_pool` selects a prepared directory pool, defaulting to `cabrita`.
+New deployments upload all QEMU-visible media into that pool. These changes do
+not migrate existing VM disks. See [host setup](host-installation.md).

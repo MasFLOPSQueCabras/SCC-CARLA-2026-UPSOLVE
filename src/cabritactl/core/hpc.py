@@ -1,6 +1,6 @@
 """Resolve shared HPC configuration independently of the deployment provider."""
 
-from ipaddress import ip_address
+from ipaddress import ip_address, ip_network
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -29,6 +29,7 @@ class HPCSettings(BaseModel):
     ib_interface: str = "ib0"
     ib_prefix: int = Field(default=24, ge=1, le=32)
     ucx_device: str = "mlx5_0:1"
+    management_sources: list[str] = Field(default_factory=list)
     tuning: bool = False
     tuned_profile: str = "throughput-performance"
     sysctl: dict[str, int] = Field(
@@ -44,6 +45,9 @@ class HPCSettings(BaseModel):
         if manifest.configuration.profile == "scc-carla-2026":
             defaults = {"transport": "ucx", "tuning": True, "software": "spack"}
         settings = cls.model_validate(defaults | manifest.configuration.inputs)
+        for source in settings.management_sources:
+            if ip_network(source, strict=False).version != 4:
+                raise ValueError("management_sources requires IPv4 addresses/subnets")
         nodes = manifest.nodes
         if not nodes:
             raise ValueError(
@@ -93,6 +97,12 @@ class HPCSettings(BaseModel):
         assert self.nfs_server is not None
         addresses = {node.hostname: self.address(node) for node in manifest.nodes}
         return self.model_dump() | {
+            "management_sources": self.management_sources
+            or [
+                manifest.network.gateway
+                if manifest.provider == "libvirt"
+                else manifest.bastion.http_bind_ip
+            ],
             "cluster_user": manifest.defaults.os.username,
             "cluster_user_home": f"/home/{manifest.defaults.os.username}",
             "nfs_server_host": self.nfs_server,

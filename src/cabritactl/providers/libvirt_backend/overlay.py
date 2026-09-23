@@ -90,7 +90,7 @@ def create_cow_overlay(
     ]
     subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=1800)
     try:
-        overlay_path.chmod(0o666)
+        overlay_path.chmod(0o600)
     except OSError:
         pass
     return overlay_path

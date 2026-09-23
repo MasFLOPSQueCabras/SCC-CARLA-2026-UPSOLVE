@@ -19,17 +19,91 @@
     name: firewalld
     state: started
     enabled: true
-- name: Allow traffic between the declared cluster peers
+- name: Create the Cabrita peer zone
   ansible.posix.firewalld:
-    zone: trusted
+    zone: cabrita-peers
+    state: present
+    permanent: true
+  register: peer_zone
+- name: Load the new peer zone
+  ansible.builtin.command: firewall-cmd --reload
+  when: peer_zone.changed
+  changed_when: true
+- name: Permit dynamic MPI traffic within the declared peer zone
+  ansible.posix.firewalld:
+    zone: cabrita-peers
+    target: ACCEPT
+    state: present
+    permanent: true
+  register: peer_target
+- name: Load the peer zone target
+  ansible.builtin.command: firewall-cmd --reload
+  when: peer_target.changed
+  changed_when: true
+- name: Read Cabrita peer sources
+  ansible.builtin.command: firewall-cmd --permanent --zone=cabrita-peers --list-sources
+  register: old_peers
+  changed_when: false
+- name: Remove stale Cabrita peers
+  ansible.posix.firewalld:
+    zone: cabrita-peers
+    source: '{{ item }}'
+    state: disabled
+    permanent: true
+    immediate: true
+  loop: "{{ old_peers.stdout.split() | difference(cluster_addresses.values() | map('regex_replace', '$', '/32') | list) }}"
+- name: Permit declared peer addresses
+  ansible.posix.firewalld:
+    zone: cabrita-peers
     source: '{{ cluster_addresses[item] }}/32'
     state: enabled
     permanent: true
     immediate: true
   loop: '{{ groups["cluster"] }}'
-- name: Keep management SSH available
+- name: Discover the management firewall zone
+  ansible.builtin.command: firewall-cmd --get-default-zone
+  register: management_zone
+  changed_when: false
+- name: Read existing Cabrita management rule receipt
+  ansible.builtin.slurp:
+    src: /etc/cabrita-management-rules.json
+  register: management_receipt
+  failed_when: false
+- name: Initialize management SSH rules
+  ansible.builtin.set_fact:
+    management_rules: []
+    previous_management: "{{ (management_receipt.content | b64decode | from_json) if management_receipt.content is defined else [] }}"
+- name: Compute management SSH rules
+  ansible.builtin.set_fact:
+    management_rules: '{{ management_rules + [management_rule] }}'
+  vars:
+    management_rule: 'rule family="ipv4" source address="{{ item }}" service name="ssh" accept'
+  loop: '{{ management_sources }}'
+- name: Remove stale Cabrita management rules
   ansible.posix.firewalld:
-    service: ssh
+    zone: '{{ management_zone.stdout }}'
+    rich_rule: '{{ item }}'
+    state: disabled
+    permanent: true
+    immediate: true
+  loop: '{{ previous_management | difference(management_rules) }}'
+- name: Allow management SSH from the controller
+  ansible.posix.firewalld:
+    zone: '{{ management_zone.stdout }}'
+    rich_rule: '{{ item }}'
     state: enabled
+    permanent: true
+    immediate: true
+  loop: '{{ management_rules }}'
+- name: Save Cabrita management rules
+  ansible.builtin.copy:
+    dest: /etc/cabrita-management-rules.json
+    content: '{{ management_rules | to_json }}'
+    mode: '0600'
+- name: Scope the standard image SSH service to management sources
+  ansible.posix.firewalld:
+    zone: '{{ management_zone.stdout }}'
+    service: ssh
+    state: disabled
     permanent: true
     immediate: true

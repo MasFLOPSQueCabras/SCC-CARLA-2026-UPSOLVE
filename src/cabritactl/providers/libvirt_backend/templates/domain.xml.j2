@@ -10,9 +10,12 @@
     <topology sockets='{{ topology.sockets }}' cores='{{ topology.cores }}' threads='{{ topology.threads }}'/>
     {% endif %}
   </cpu>
-  <os {% if firmware == 'efi' %}firmware='efi'{% endif %}>
+  <os {% if firmware == 'efi' and not firmware_loader | default(false) %}firmware='efi'{% endif %}>
     <type machine='{{ machine_type | default("q35") }}'>hvm</type>
-    {% if firmware == 'efi' %}
+    {% if firmware == 'efi' and firmware_loader | default(false) %}
+    <loader readonly='yes' type='pflash' secure='no' format='{{ firmware_loader_format }}'>{{ firmware_loader }}</loader>
+    <nvram template='{{ firmware_nvram }}' templateFormat='{{ firmware_nvram_format }}' format='{{ firmware_nvram_format }}'/>
+    {% elif firmware == 'efi' %}
     <firmware>
       <feature enabled='no' name='enrolled-keys'/>
       <feature enabled='no' name='secure-boot'/>
@@ -86,6 +89,9 @@
     </console>
     {% if graphics == 'spice' %}
     <graphics type='spice' autoport='yes'/>
+    {% else %}
+    {# Rocky BIOS GRUB still requires VGA with a serial-only console. #}
+    <video><model type='vga'/></video>
     {% endif %}
   </devices>
 </domain>

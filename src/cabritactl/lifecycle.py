@@ -15,6 +15,7 @@ from cabritactl.bootstrap.http_server import EphemeralRangeHTTPServer
 from cabritactl.bootstrap.media import prepare_media
 from cabritactl.bootstrap.remote import BastionMedia
 from cabritactl.core.bootstrap import BootstrapMethod, CustomPreparer
+from cabritactl.core.executables import find_executable
 from cabritactl.core.lifecycle.service import Observation, StateStore
 from cabritactl.core.manifest import NodeSpec
 from cabritactl.core.providers.base import NodeProvider, PowerState
@@ -89,6 +90,12 @@ class ProviderBackend:
             raise RuntimeError(f"Cannot determine power state for {node.hostname}")
         reachable = self._reachable(node) if power == PowerState.ON else False
         exists = self.provider.node_exists(node.id)
+        if (
+            self.provider.name == "libvirt"
+            and self.state.read(node.id).phase == "installing"
+            and not self.provider.node_defined(node.id)
+        ):
+            exists = False
         if self.provider.name == "helvetios":
             exists = reachable or self.state.read(node.id).phase != "new"
         return Observation(exists, power == PowerState.ON, reachable)
@@ -157,6 +164,7 @@ class ProviderBackend:
             template_engine=self.templates,
             staging_dir=node_dir,
             reinstall=reinstall,
+            resume_install=self.state.read(node.id).phase == "installing",
             bootstrap_method=bootstrap.method.value,
             oemdrv_path=auxiliary,
             user_data=bootstrap.user_data,
@@ -198,6 +206,9 @@ class ProviderBackend:
                         f"{self.cluster.manifest.defaults.os.username}@{node.ip}",
                         "sudo cloud-init status --wait --long",
                     ]
+                    (self.work_dir / f"node-{node.id}").mkdir(
+                        parents=True, exist_ok=True
+                    )
                     with (self.work_dir / f"node-{node.id}" / "cloud-init.log").open(
                         "w"
                     ) as log:
@@ -292,11 +303,16 @@ class ProviderBackend:
             )
         )
         with (self.work_dir / "configure.log").open("w") as log:
-            subprocess.run(
-                ["ansible-playbook", "-i", str(inventory), str(playbook)],
+            result = subprocess.run(
+                [
+                    find_executable("ansible-playbook") or "ansible-playbook",
+                    "-i",
+                    str(inventory),
+                    str(playbook),
+                ],
                 stdout=log,
                 stderr=subprocess.STDOUT,
-                check=True,
+                check=False,
                 timeout=self.timeout,
                 env={
                     **os.environ,
@@ -308,6 +324,11 @@ class ProviderBackend:
                     ),
                 },
             )
+
+            if result.returncode:
+                raise RuntimeError(
+                    f"Ansible configuration failed ({result.returncode}); see {self.work_dir / 'configure.log'}"
+                )
 
     def stop(self, node: NodeSpec) -> None:
         if not self.provider.power_off(node.id):

@@ -15,7 +15,9 @@ from cabritactl.core.manifest.models import ClusterManifest, NodeSpec
 from cabritactl.core.providers.base import NodeProvider, PowerState, ProviderPaths
 from cabritactl.core.templating import TemplateEngine
 from cabritactl.providers.libvirt_backend.cidata import generate_cidata
+from cabritactl.providers.libvirt_backend.network import ensure_network, remove_network
 from cabritactl.providers.libvirt_backend.overlay import create_cow_overlay
+from cabritactl.providers.libvirt_backend.storage import ManagedStorage
 
 
 class LibvirtProvider(NodeProvider):
@@ -30,6 +32,7 @@ class LibvirtProvider(NodeProvider):
         template_engine: TemplateEngine | None = None,
         settings: ClusterSettings | None = None,
     ) -> None:
+        self.managed_storage = paths is None and storage_dir is None
         self.manifest = manifest
         self.settings = settings
         if settings is not None:
@@ -40,8 +43,7 @@ class LibvirtProvider(NodeProvider):
         self._paths = paths or ProviderPaths(
             staging_dir=Path.home() / ".cache" / "cabrita" / "staging",
             iso_cache_dir=Path.home() / ".cache" / "cabrita" / "iso",
-            storage_dir=storage_dir
-            or (Path.home() / ".local" / "share" / "cabrita" / "libvirt_storage"),
+            storage_dir=storage_dir or (Path("/var/lib/libvirt/images/cabrita")),
             state_db_path=Path.home() / ".config" / "cabrita" / "state.db",
             gateway_ip=manifest.network.gateway,
             dns_ip=manifest.network.dns,
@@ -57,7 +59,12 @@ class LibvirtProvider(NodeProvider):
     @property
     def conn(self) -> libvirt.virConnect:
         if self._conn is None:
-            c = libvirt.open(self.uri)
+            try:
+                c = libvirt.open(self.uri)
+            except libvirt.libvirtError as exc:
+                raise RuntimeError(
+                    f"Cannot connect to {self.uri}: {exc}. Run cabritactl host setup --apply and verify libvirt authorization in this login session."
+                ) from exc
             if not c:
                 raise RuntimeError(f"Failed to connect to libvirt URI: {self.uri}")
             libvirt.registerErrorHandler(lambda ctx, err: None, None)
@@ -79,9 +86,18 @@ class LibvirtProvider(NodeProvider):
     @contextmanager
     def deployment_session(self) -> Generator[None]:
         """Ensures local storage directory permissions for QEMU/KVM process."""
-        self.storage_dir.mkdir(parents=True, exist_ok=True)
-        self.storage_dir.chmod(0o777)
+        if self.managed_storage:
+            _ = self.storage.pool
+            ensure_network(self.conn, self.manifest)
+        else:
+            self.storage_dir.mkdir(parents=True, exist_ok=True)
         yield
+
+    @property
+    def storage(self) -> ManagedStorage:
+        return ManagedStorage(
+            self.conn, self.manifest.libvirt.storage_pool, self.manifest.name
+        )
 
     def _get_domain_name(self, node_id: int) -> str:
         if self._get_node_spec(node_id) is None:
@@ -104,7 +120,16 @@ class LibvirtProvider(NodeProvider):
                     return n
         return None
 
+    def node_defined(self, node_id: int) -> bool:
+        return self._get_domain(node_id) is not None
+
     def node_exists(self, node_id: int) -> bool:
+        if self.managed_storage:
+            return (
+                self._get_domain(node_id) is not None
+                or self.storage.lookup(f"{self._get_domain_name(node_id)}.qcow2")
+                is not None
+            )
         return (
             self._get_domain(node_id) is not None
             or (self.storage_dir / f"{self._get_domain_name(node_id)}.qcow2").exists()
@@ -117,6 +142,8 @@ class LibvirtProvider(NodeProvider):
         return spec.ip
 
     def power_on(self, node_id: int) -> bool:
+        if self.manifest.network.managed:
+            ensure_network(self.conn, self.manifest)
         dom = self._get_domain(node_id)
         if dom is None:
             return False
@@ -186,13 +213,19 @@ class LibvirtProvider(NodeProvider):
         if spec is None or spec.vm is None or self.manifest is None:
             raise ValueError("Provisioning requires a resolved manifest node")
         if self.node_exists(node_id):
-            if not kwargs.get("reinstall", False):
+            can_resume = (
+                self.managed_storage
+                and kwargs.get("resume_install", False)
+                and not self.node_defined(node_id)
+            )
+            if not kwargs.get("reinstall", False) and not can_resume:
                 raise RuntimeError("Existing node requires explicit --reinstall")
             self.teardown_node(node_id)
         te = template_engine or self.template_engine
         stg = staging_dir or self.paths.staging_dir
         stg.mkdir(parents=True, exist_ok=True)
-        self.storage_dir.mkdir(parents=True, exist_ok=True)
+        if not self.managed_storage:
+            self.storage_dir.mkdir(parents=True, exist_ok=True)
         name = self._get_domain_name(node_id)
         disk = self.storage_dir / f"{name}.qcow2"
         vm = spec.vm
@@ -210,8 +243,29 @@ class LibvirtProvider(NodeProvider):
             "pubkey": pubkey,
         }
         cidata: Path | None = None
+        if self.managed_storage:
+            import json
+
+            if cloud:
+                info = json.loads(
+                    subprocess.check_output(
+                        ["qemu-img", "info", "--output=json", image_source], text=True
+                    )
+                )
+                if (
+                    info.get("format") != "qcow2"
+                    or info.get("backing-filename")
+                    or info.get("data-file")
+                    or info.get("format-specific", {}).get("data", {}).get("data-file")
+                ):
+                    raise ValueError("Imported base image must be self-contained")
+            image_source = str(self.storage.import_file(Path(image_source)))
+            disk = self.storage.disk(
+                f"{name}.qcow2", vm.disk.size_gb, Path(image_source) if cloud else None
+            )
         if cloud:
-            create_cow_overlay(Path(image_source), disk, size=f"{vm.disk.size_gb}G")
+            if not self.managed_storage:
+                create_cow_overlay(Path(image_source), disk, size=f"{vm.disk.size_gb}G")
             user_data, metadata, network = (
                 stg / filename
                 for filename in ("user-data", "meta-data", "network-config")
@@ -227,14 +281,23 @@ class LibvirtProvider(NodeProvider):
                     destination.write_text(
                         te.render_string(Path(override).read_text(), context)
                     )
-            cidata = self.storage_dir / f"{name}_cidata.iso"
+            cidata = (
+                stg if self.managed_storage else self.storage_dir
+            ) / f"{name}_cidata.iso"
             generate_cidata(user_data, metadata, network, cidata)
-        else:
+            if self.managed_storage:
+                cidata = self.storage.import_file(cidata, cidata.name)
+        elif not self.managed_storage:
             subprocess.run(
                 ["qemu-img", "create", "-f", "qcow2", str(disk), f"{vm.disk.size_gb}G"],
                 check=True,
                 capture_output=True,
                 timeout=120,
+            )
+        auxiliary = kwargs.get("oemdrv_path")
+        if auxiliary and self.managed_storage:
+            auxiliary = str(
+                self.storage.import_file(Path(auxiliary), f"{name}_oemdrv.img")
             )
         network_spec = self.manifest.network
         domain_context = {
@@ -256,10 +319,10 @@ class LibvirtProvider(NodeProvider):
             "disk_bus": vm.disk.bus,
             "cidata_iso": str(cidata) if cidata else None,
             "install_iso": None if cloud else image_source,
-            "oemdrv_iso": kwargs.get("oemdrv_path"),
+            "oemdrv_iso": auxiliary,
             "boot_dev": "hd" if cloud else "cdrom",
             "network_bridge": network_spec.bridge
-            if network_spec.bridge != "virbr0"
+            if not network_spec.managed and network_spec.bridge != "virbr0"
             else None,
             "network_name": network_spec.network_name,
             "mac_address": spec.mac,
@@ -268,6 +331,16 @@ class LibvirtProvider(NodeProvider):
             "nic_queues": network_spec.queues,
             "graphics": vm.graphics,
         }
+        if vm.firmware == "efi":
+            from cabritactl.providers.libvirt_backend.firmware import select_firmware
+
+            domain_context.update(
+                select_firmware(
+                    self.conn.getDomainCapabilities(
+                        None, None, vm.machine_type, "kvm", 0
+                    )
+                )
+            )
         xml = te.render("domain.xml.j2", domain_context)
         (stg / "domain.xml").write_text(xml)
         domain = self.conn.defineXML(xml)
@@ -319,8 +392,24 @@ class LibvirtProvider(NodeProvider):
             )
         name = self._get_domain_name(node_id)
         for suffix in (".qcow2", "_cidata.iso", "_oemdrv.img"):
-            (self.storage_dir / f"{name}{suffix}").unlink(missing_ok=True)
+            if self.managed_storage:
+                self.storage.remove(f"{name}{suffix}")
+            else:
+                (self.storage_dir / f"{name}{suffix}").unlink(missing_ok=True)
         return True
+
+    @contextmanager
+    def capture_source(self, node_id: int, name: str):
+        from tempfile import TemporaryDirectory
+
+        if not self.managed_storage:
+            yield self.storage_dir / f"{name}.qcow2"
+            return
+        with TemporaryDirectory(prefix="cabrita-capture-") as directory:
+            yield self.storage.export_chain(f"{name}.qcow2", Path(directory))
+
+    def cleanup_network(self) -> None:
+        remove_network(self.conn, self.manifest)
 
     def close(self) -> None:
         if self._conn is not None:
