@@ -13,16 +13,18 @@ gcc --version > "$out/gcc-version.txt"
 /shared/environment/view/bin/mpirun --version > "$out/mpi-version.txt"
 /shared/environment/view/bin/ompi_info --all > "$out/ompi-info.txt"
 /shared/environment/view/bin/ucx_info -v > "$out/ucx-version.txt"
+/shared/environment/view/bin/ucx_info -d > "$out/ucx-devices.txt"
 ldd /shared/environment/view/bin/xhpl > "$out/hpl-libraries.txt"
 sha256sum /shared/environment/view/bin/xhpl > "$out/hpl.sha256"
 # The pinned HPL recipe rewrites its configure BLAS probe: include that source.
-source_dir=$("$spack" -e /shared/environment location -s hpl)
+source_dir=$("$spack" -e /shared/environment location -s hpl)/spack-src
 python3 - "$source_dir" "$out/modified_source.zip" <<'PY'
 import pathlib, sys, zipfile
 source = pathlib.Path(sys.argv[1])
 if not (source / 'configure').is_file():
     raise SystemExit('Missing retained HPL source; build with --keep-stage')
-with zipfile.ZipFile(sys.argv[2], 'x', compression=zipfile.ZIP_DEFLATED) as archive:
+with zipfile.ZipFile(sys.argv[2], 'x', compression=zipfile.ZIP_DEFLATED,
+                     strict_timestamps=False) as archive:
     for path in sorted(source.rglob('*')):
         if path.is_file():
             archive.write(path, pathlib.Path('hpl-2.3') / path.relative_to(source))

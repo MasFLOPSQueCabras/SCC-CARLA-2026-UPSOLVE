@@ -110,7 +110,7 @@ is a maximum: reduce `--seconds` to fit the submission deadline, reserving time
 for packaging, replay validation and delivery. For the 2026-09-23 run, the user
 confirmed a deadline of 19:43:32 UTC.
 It compares physical-core MPI and NUMA-aware hybrid layouts, block sizes
-128/192/256, and two near-square grids. Larger matrices are limited by available
+128/192/256/384, and two near-square grids. Larger matrices are limited by available
 memory, workspace reserve, measured speed and remaining runtime. Every attempt
 has its own immutable input, settings, command, logs, and status. The best result
 is chosen only from complete runs passing the residual threshold of 16.0.

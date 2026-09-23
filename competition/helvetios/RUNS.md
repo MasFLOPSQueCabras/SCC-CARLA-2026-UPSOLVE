@@ -93,3 +93,17 @@ and disabled device memory: `uct_ib_mlx5_devx_mem_t` lacked its `dm` member.
 Enabled `+dm`, preserving the 57 completed dependencies, and rebuilt UCX/MPI/HPL.
 The failed build log is retained as `configure-failed-ucx-dm.log`; the resumed
 source build is logged on the head node in `/shared/hpl/build-dm.log`.
+
+## Source build and smoke — passed 2026-09-23 18:54 UTC
+
+The corrected source build completed UCX, OpenMPI and HPL successfully. Runtime
+UCX reports RC verbs and RC mlx5 on `mlx5_0:1`. Explicit MPI hostfiles verified
+one rank per node and two ranks per node bound to the two 18-core NUMA domains.
+Full configuration completed without failures; its repeat check is in progress.
+
+The three-node smoke run used N=4096, NB=128, grid 1×3 and one thread per rank:
+**161.08 GFLOPS**, 0.28 seconds, residual **0.00294957629**, one pass, zero failures
+and zero skipped tests. Evidence is in `smoke/` and `/shared/hpl/results/smoke`.
+The source collector now uses Spack's `spack-src` subdirectory and accommodates
+pre-1980 source timestamps in ZIP metadata. Build evidence and the modified HPL
+source archive were collected successfully.

@@ -170,7 +170,7 @@ def main() -> None:
         return record
 
     screen_end = deadline - min(2700, args.seconds * 0.375)
-    for layout, nb in itertools.product(layouts, (128, 192, 256)):
+    for layout, nb in itertools.product(layouts, (128, 192, 256, 384)):
         for p, q in grids(layout[0] * 3):
             if time.monotonic() >= screen_end - 30:
                 break
