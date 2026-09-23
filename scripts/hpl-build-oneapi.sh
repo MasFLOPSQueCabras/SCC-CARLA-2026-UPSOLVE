@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build reference HPL ourselves against explicitly selected compiler/MPI/BLAS.
 set -euo pipefail
-variant=${1:?Usage: hpl-build-oneapi.sh gcc-mkl-openmpi|icx-mkl-openmpi|icx-mkl-intelmpi|icx-mkl-intelmpi-fast|icx-mkl-intelmpi-mixed}
+variant=${1:?Usage: hpl-build-oneapi.sh gcc-mkl-openmpi|icx-mkl-openmpi|icx-mkl-intelmpi|icx-mkl-intelmpi-fast|icx-mkl-intelmpi-mixed|icx-openblas-openmpi-mixed}
 root=/shared/hpl/intel-builds/$variant
 mkdir -p "$root"
 test ! -e "$root/install/bin/xhpl"
@@ -15,6 +15,12 @@ case "$variant" in
         cc=/shared/environment/view/bin/mpicc
         blas="-L$mkl/lib -Wl,-rpath,$mkl/lib -lmkl_gf_lp64 -lmkl_gnu_thread -lmkl_core -lgomp -lpthread -lm -ldl"
         flags='-O3 -march=skylake-avx512'
+        ;;
+    icx-openblas-openmpi-mixed)
+        cc=/shared/environment/view/bin/mpicc
+        export OMPI_CC="$compiler/bin/icx"
+        blas="-L/shared/environment/view/lib -Wl,-rpath,/shared/environment/view/lib -L$compiler/lib -Wl,-rpath,$compiler/lib -lopenblas -lgomp -lpthread -lm -ldl"
+        flags='-O3 -xCORE-AVX512 -fp-model=fast=2 -qopt-zmm-usage=high'
         ;;
     icx-mkl-openmpi)
         cc=/shared/environment/view/bin/mpicc
@@ -54,7 +60,7 @@ PY
     printf 'CC=%s\nCFLAGS=%s\nBLAS=%s\n' "$cc" "$flags" "$blas"
     cd "$root/source"
     ./configure --prefix="$root/install" "CC=$cc" "CFLAGS=$flags" "LDFLAGS=$blas" "LIBS=$blas"
-    if [[ $variant == icx-mkl-intelmpi-mixed ]]; then
+    if [[ $variant == *-mixed ]]; then
         precise_flags='-O3 -xCORE-AVX512 -fp-model=precise -qopt-zmm-usage=high'
         printf 'Machine precision and validation CFLAGS=%s\n' "$precise_flags"
         make -C src auxil/HPL_dlamch.o pauxil/HPL_pdlamch.o "CFLAGS=$precise_flags"

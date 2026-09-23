@@ -3,7 +3,7 @@
 set -euo pipefail
 variant=${1:?Pass the build variant}
 dest=${2:?Pass a new evidence directory}
-case "$variant" in gcc-mkl-openmpi|icx-mkl-openmpi|icx-mkl-intelmpi|icx-mkl-intelmpi-fast|icx-mkl-intelmpi-mixed) ;; *) exit 2 ;; esac
+case "$variant" in gcc-mkl-openmpi|icx-mkl-openmpi|icx-mkl-intelmpi|icx-mkl-intelmpi-fast|icx-mkl-intelmpi-mixed|icx-openblas-openmpi-mixed) ;; *) exit 2 ;; esac
 root=/shared/hpl/intel-builds/$variant
 test ! -e "$dest"
 cp -a /shared/hpl/build-evidence "$dest"
@@ -24,14 +24,18 @@ with zipfile.ZipFile(sys.argv[2], 'w', zipfile.ZIP_DEFLATED, strict_timestamps=F
 PY
 cat > "$dest/source-changes.md" <<'TEXT'
 The Netlib HPL 2.3 configure script's libs10 BLAS probe was changed to explicitly
-link oneMKL. The numerical algorithm is unchanged. The archive contains the
+link the selected BLAS. The numerical algorithm is unchanged. The archive contains the
 actual configured build tree. hpl-build-oneapi.sh records the reproducible patch,
 verified source checksum, compiler flags and link options.
 TEXT
 flags=$(sed -n 's/^CFLAGS=//p' "$root/build.log" | head -n 1)
+blas_description='oneMKL 2026.1 supplies BLAS.'
+if [[ $variant == icx-openblas-openmpi-mixed ]]; then
+    blas_description='Source-built OpenBLAS 0.3.28 supplies BLAS; oneMKL is not linked.'
+fi
 cat > "$dest/build-description.md" <<TEXT
 HPL 2.3 was compiled from checksum-verified Netlib source using variant
-\`$variant\`. oneMKL 2026.1 supplies BLAS. The variant selects GCC 14.3.1 or
+\`$variant\`. $blas_description The variant selects GCC 14.3.1 or
 Intel icx 2026.1.1, and source-built OpenMPI 5.0.5 or Intel MPI 2021.18.1.
 \`selected-hpl-build.log\` records the actual compiler, flags, build output,
 linkage and executable checksum. The selected compiler flags are \`$flags\`.
@@ -44,8 +48,8 @@ are permitted. The only HPL source modification is the configure BLAS probe;
 see \`src/README.md\` and the actual source ZIP.
 
 The Spack records describe the underlying source-built OpenMPI/UCX baseline
-and its dependencies; their original HPL/OpenBLAS entries describe the comparison
-baseline, not the selected oneMKL-linked executable. After provisioning that
+and its dependencies. Their original HPL entry describes the comparison baseline;
+the selected build log records the actual executable linkage. After provisioning that
 baseline with Cabrita, run on the head node:
 
 \`\`\`bash

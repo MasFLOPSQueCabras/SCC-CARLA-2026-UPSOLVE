@@ -262,3 +262,19 @@ code but compiles HPL_dlamch, HPL_pdlamch, and all testing/validation code with
 The build log records each override. Its N=6912 smoke test passed with machine
 precision 1.110223e-16 and residual 0.00186949013. Failed and corrected builds and
 runs are kept separately; the unsuccessful build is never eligible for selection.
+
+The corrected Intel/oneMKL/Intel MPI build passed N=155520, NB=192 at
+**4353.5 GFLOPS** (576.02 seconds; residual 0.00052645344). Its matched N=72576,
+NB=192 screen was 3910.3 GFLOPS. An additional independently built
+`icx-openblas-openmpi-mixed` variant isolates the compiler change while retaining
+OpenBLAS/OpenMPI; its smoke passed, and the matched screen reached 3923.1 GFLOPS.
+Neither exceeded the earlier GCC/OpenBLAS screen (3969.6 GFLOPS).
+
+Extra-hour screens also tested a node-local 3×36 process grid, long broadcast,
+and depth-2 lookahead. The search plan and each exact input/settings are retained
+under `/shared/hpl/extra-hour-20260923`. A deliberate large-scale test selects
+oneMKL with NB=384, the Intel AVX-512 LINPACK recommendation: small-screen scores
+alone do not establish the optimum block size near the memory limit. This
+selection requires an already numerically validated case and is recorded in
+`search-plan.json` with its rationale. The reproduced 4474-GFLOPS OpenBLAS
+result remains an eligible best result throughout.

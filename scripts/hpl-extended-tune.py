@@ -153,8 +153,11 @@ def main():
     records = (
         json.loads((args.output / "attempts.json").read_text()) if args.resume else []
     )
-    if plan and not args.resume:
+    if plan:
+        known = {record["directory"] for record in records}
         for seed in plan.get("seed_records", []):
+            if seed["directory"] in known:
+                continue
             run = Path(seed["directory"])
             if (run / "exit-status.txt").read_text().strip() != "0":
                 raise ValueError("Seed must be a completed successful run")
@@ -391,6 +394,16 @@ def main():
     )
     if not good:
         raise SystemExit("No validated candidate for the large run")
+    if plan and plan.get("large_candidate"):
+        requested = plan["large_candidate"]
+        preferred = [
+            record
+            for record in good
+            if all(record.get(key) == value for key, value in requested.items())
+        ]
+        if not preferred:
+            raise SystemExit("Requested large candidate has no validated measurement")
+        good = preferred + [record for record in good if record not in preferred]
     # Prefer a memory-heavy candidate, with an optional packaged repeat.
     for index in range(args.large_runs):
         candidate = (

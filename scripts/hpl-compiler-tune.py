@@ -21,14 +21,19 @@ def main():
     parser.add_argument("--after", required=True, type=Path)
     parser.add_argument(
         "--variant",
-        choices=("icx-mkl-intelmpi-fast", "icx-mkl-intelmpi-mixed"),
+        choices=(
+            "icx-mkl-intelmpi-fast",
+            "icx-mkl-intelmpi-mixed",
+            "icx-openblas-openmpi-mixed",
+        ),
         default="icx-mkl-intelmpi-mixed",
     )
+    parser.add_argument("--screen-only", action="store_true")
     args = parser.parse_args()
     deadline = dt.datetime.fromisoformat(args.deadline).timestamp()
     args.output.mkdir(parents=True, exist_ok=False)
     while not args.after.is_file():
-        if deadline - time.time() < 600:
+        if deadline - time.time() < 480:
             raise SystemExit("Insufficient remaining time; no additional build started")
         time.sleep(10)
     variant = args.variant
@@ -48,8 +53,9 @@ def main():
             check=True,
             timeout=130,
         )
+    base_variant = "icx-mkl-openmpi" if "openmpi" in variant else "icx-mkl-intelmpi"
     base = Path(
-        "/shared/hpl/oneapi-comparison/icx-mkl-intelmpi-36x1/settings.sh"
+        f"/shared/hpl/oneapi-comparison/{base_variant}-36x1/settings.sh"
     ).read_text()
     template = Path("/shared/hpl/HPL.dat").read_text()
     records = []
@@ -111,7 +117,7 @@ def main():
     if "result" not in screen:
         raise SystemExit("Compiler variant failed screen validation")
     allowance = min(900, deadline - time.time() - 90)
-    if allowance >= 150:
+    if allowance >= 150 and not args.screen_only:
         # Reserve 15% of estimated solve time and 30 seconds of launch overhead.
         speed = screen["result"]["gflops"] * 1e9
         n = int(((allowance - 30) * speed * 1.5 * 0.85) ** (1 / 3)) // 3456 * 3456
