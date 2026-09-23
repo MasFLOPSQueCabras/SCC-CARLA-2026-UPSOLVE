@@ -296,3 +296,23 @@ quotes in the generated BLAS library list; removing those quotes fixed it.
 Both failed and corrected build logs are preserved. `ldd` confirms libblis.so.4
 and OpenMPI are linked, with no OpenBLAS or oneMKL dependency. The N=6912 smoke
 passed with residual 0.00451529922.
+
+BLIS completed the matched screen before the cutoff: **3736.7 GFLOPS**,
+68.20 seconds, residual 0.00207928808, versus GCC/OpenBLAS **3969.6 GFLOPS**
+at identical N=72576, NB=192 and placement (BLIS 5.87% lower). This is a
+single configuration comparison, not an exhaustive BLIS tuning search.
+
+The final audit revalidated 54 actual post-submission attempts: 52 passed,
+one timed out, and the all-fast-math smoke failed numerical validation despite
+MPI exiting zero. The selected winner remains **4474.0 GFLOPS**, with its
+independent packaged replay at **4450.0 GFLOPS**. The final reproducible package
+pins Cabrita commit `59b41e9840f65120854c457d961c72ca20447942` and is saved as
+`~/post-submission-tuning-20260923` on the bastion, separately from the original
+on-time submission. Local run/audit evidence is in
+`test-results/helvetios-submission/post-tuning-evidence/`.
+
+Separate-package delivery completed successfully. All 37 new-package checksums
+passed on the bastion. The original `~/submission/SHA256SUMS` hash remained
+`23b9c5b3671f9dd160d3eb7071c78ed28b54e8f4beacea88069486cbc93f76ab`, and all
+37 original files passed checksum verification after delivery. Local package
+and nested source archives passed the supplied-secret/private-key scan.
