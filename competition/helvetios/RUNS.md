@@ -316,3 +316,19 @@ passed on the bastion. The original `~/submission/SHA256SUMS` hash remained
 `23b9c5b3671f9dd160d3eb7071c78ed28b54e8f4beacea88069486cbc93f76ab`, and all
 37 original files passed checksum verification after delivery. Local package
 and nested source archives passed the supplied-secret/private-key scan.
+
+## Final user-authorized panel and large-matrix experiment
+
+After the previous tuning window, the user authorized the proposed final panel
+sweep and larger OpenBLAS run. `scripts/hpl-last-chance.py` starts with a fresh
+N=72576, NB=192, 6×18 baseline, then changes RFACT to 2, NBMIN to 8, and NDIV to
+3 individually. An apparent screen winner is repeated; it replaces the baseline
+only if the mean of its two results exceeds the baseline by 1%. The selected
+configuration then runs N=235008 with a 2400-second timeout after checking free
+memory. The original on-time submission and previous separate package remain
+untouched. Results are in `/shared/hpl/last-chance-20260923`.
+
+During the large run, `turbostat` samples busy-clock frequency, CPU/package
+temperature, thermal counters, and package power every 15 seconds on each node.
+Each monitor has its own bounded runtime. The diagnostic does not change CPU
+frequency, power limits, or BIOS settings.
