@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build reference HPL ourselves against explicitly selected compiler/MPI/BLAS.
 set -euo pipefail
-variant=${1:?Usage: hpl-build-oneapi.sh gcc-mkl-openmpi|icx-mkl-openmpi|icx-mkl-intelmpi}
+variant=${1:?Usage: hpl-build-oneapi.sh gcc-mkl-openmpi|icx-mkl-openmpi|icx-mkl-intelmpi|icx-mkl-intelmpi-fast}
 root=/shared/hpl/intel-builds/$variant
 mkdir -p "$root"
 test ! -e "$root/install/bin/xhpl"
@@ -22,11 +22,14 @@ case "$variant" in
         blas="-L$mkl/lib -L$compiler/lib -Wl,-rpath,$mkl/lib -Wl,-rpath,$compiler/lib -lmkl_intel_lp64 -lmkl_intel_thread -lmkl_core -liomp5 -lpthread -lm -ldl"
         flags='-O3 -xCORE-AVX512 -fp-model=precise'
         ;;
-    icx-mkl-intelmpi)
+    icx-mkl-intelmpi|icx-mkl-intelmpi-fast)
         export I_MPI_ROOT="$intelmpi" I_MPI_CC="$compiler/bin/icx"
         cc=$intelmpi/bin/mpiicx
         blas="-L$mkl/lib -L$compiler/lib -Wl,-rpath,$mkl/lib -Wl,-rpath,$compiler/lib -lmkl_intel_lp64 -lmkl_intel_thread -lmkl_core -liomp5 -lpthread -lm -ldl"
         flags='-O3 -xCORE-AVX512 -fp-model=precise'
+        if [[ $variant == icx-mkl-intelmpi-fast ]]; then
+            flags='-O3 -xCORE-AVX512 -fp-model=fast=2 -qopt-zmm-usage=high'
+        fi
         ;;
     *) echo 'Unknown build variant' >&2; exit 2 ;;
 esac

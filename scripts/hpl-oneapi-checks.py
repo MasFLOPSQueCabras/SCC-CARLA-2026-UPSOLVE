@@ -15,12 +15,23 @@ HELPERS = runpy.run_path(str(HERE / "hpl-tune.py"))
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("output", type=Path)
+    parser.add_argument(
+        "--variants",
+        nargs="+",
+        choices=(
+            "gcc-mkl-openmpi",
+            "icx-mkl-openmpi",
+            "icx-mkl-intelmpi",
+            "icx-mkl-intelmpi-fast",
+        ),
+        default=("gcc-mkl-openmpi", "icx-mkl-openmpi", "icx-mkl-intelmpi"),
+    )
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=False)
     template = Path("/shared/hpl/HPL.dat").read_text()
     base = Path("/shared/hpl/hpl-settings.sh").read_text()
     records = []
-    variants = ("gcc-mkl-openmpi", "icx-mkl-openmpi", "icx-mkl-intelmpi")
+    variants = args.variants
     layouts = (
         (36, 1, "ppr:36:node:PE=1", 6, 18),
         (2, 18, "ppr:1:numa:PE=18", 2, 3),
@@ -49,7 +60,7 @@ def main():
                 "MPI_LIBRARY_PATH": libs
                 + ":/shared/environment/view/lib:/shared/environment/view/lib64",
             }
-            if variant.endswith("intelmpi"):
+            if "intelmpi" in variant:
                 mpi = "/opt/intel/oneapi/mpi/2021.18"
                 ucx = subprocess.check_output(
                     [

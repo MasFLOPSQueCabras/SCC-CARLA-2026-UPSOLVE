@@ -3,7 +3,7 @@
 set -euo pipefail
 variant=${1:?Pass the build variant}
 dest=${2:?Pass a new evidence directory}
-case "$variant" in gcc-mkl-openmpi|icx-mkl-openmpi|icx-mkl-intelmpi) ;; *) exit 2 ;; esac
+case "$variant" in gcc-mkl-openmpi|icx-mkl-openmpi|icx-mkl-intelmpi|icx-mkl-intelmpi-fast) ;; *) exit 2 ;; esac
 root=/shared/hpl/intel-builds/$variant
 test ! -e "$dest"
 cp -a /shared/hpl/build-evidence "$dest"
@@ -28,13 +28,14 @@ link oneMKL. The numerical algorithm is unchanged. The archive contains the
 actual configured build tree. hpl-build-oneapi.sh records the reproducible patch,
 verified source checksum, compiler flags and link options.
 TEXT
+flags=$(sed -n 's/^CFLAGS=//p' "$root/build.log" | head -n 1)
 cat > "$dest/build-description.md" <<TEXT
 HPL 2.3 was compiled from checksum-verified Netlib source using variant
 \`$variant\`. oneMKL 2026.1 supplies BLAS. The variant selects GCC 14.3.1 or
 Intel icx 2026.1.1, and source-built OpenMPI 5.0.5 or Intel MPI 2021.18.1.
 \`selected-hpl-build.log\` records the actual compiler, flags, build output,
-linkage and executable checksum. GCC uses -O3 -march=skylake-avx512; icx uses
--O3 -xCORE-AVX512 -fp-model=precise. HPL is built using configure and GNU make.
+linkage and executable checksum. The selected compiler flags are \`$flags\`.
+HPL is built using configure and GNU make.
 \`intel-packages.txt\` records exact signed vendor library/compiler RPM versions.
 No vendor HPL executable is used. The user confirmed that compiler/libraries
 are permitted. The only HPL source modification is the configure BLAS probe;
