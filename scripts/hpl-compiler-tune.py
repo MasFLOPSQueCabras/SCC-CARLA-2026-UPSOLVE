@@ -22,7 +22,7 @@ def main():
     parser.add_argument(
         "--variant",
         choices=("icx-mkl-intelmpi-fast", "icx-mkl-intelmpi-mixed"),
-        default="icx-mkl-intelmpi-fast",
+        default="icx-mkl-intelmpi-mixed",
     )
     args = parser.parse_args()
     deadline = dt.datetime.fromisoformat(args.deadline).timestamp()
