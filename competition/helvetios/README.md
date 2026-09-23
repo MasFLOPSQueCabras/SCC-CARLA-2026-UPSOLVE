@@ -160,3 +160,29 @@ record flags and linkage, run smoke checks, and compare three rank/thread layout
 Keep these alternatives separate from the winning result; select by measured
 GFLOPS and a passing residual, not by library brand. Build directories and result
 directories must be new; existing measurements are never overwritten.
+
+## Extended tuning after submission
+
+Keep the on-time submission immutable when doing further experiments. The
+extended search compares N≈73728 screens, NB 192/256/320/384/512/640, 6×18 and
+9×12 grids, intermediate hybrid layouts, and the self-built Intel alternatives.
+It then compares HPL broadcast, lookahead and panel options before allocating
+the remaining time to two larger candidates and an exact repeat. Parameter
+meanings follow [Netlib's HPL tuning guide](https://www.netlib.org/benchmark/hpl/tuning.html).
+Numerical checks remain enabled for every attempt.
+
+Copy `hpl-extended-tune.py`, `hpl-tune.py`, `hpl-result.py` and `hpl-eval.sh` to
+one shared script directory, then launch a detached job on node1:
+
+```bash
+nohup python3 /shared/hpl/extended-scripts/hpl-extended-tune.py \
+  /shared/hpl/NEW_EXTENDED_RUN --deadline YYYY-MM-DDTHH:MM:SS+00:00 \
+  > /shared/hpl/NEW_EXTENDED_RUN.log 2>&1 < /dev/null &
+```
+
+The deadline must be 15–120 minutes away. The allocation, baseline and Intel
+comparison directories must already exist from the earlier workflow. All cases
+use a separate immutable directory and the shared evaluation lock. Only complete
+runs with zero MPI exit and passing residual checks can become the new best.
+Package improvements separately from `~/submission` unless replacement has been
+authorized; the user requested preserving the on-time submission for this session.
