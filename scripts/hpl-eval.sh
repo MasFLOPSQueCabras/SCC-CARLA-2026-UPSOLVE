@@ -23,7 +23,14 @@ flock --nonblock 9 || { echo 'Another HPL evaluation is active' >&2; exit 1; }
 cp -- "$MPI_HOSTFILE" "$result/hosts"
 export OMP_NUM_THREADS OPENBLAS_NUM_THREADS=$OMP_NUM_THREADS
 export MKL_NUM_THREADS=$OMP_NUM_THREADS MKL_DYNAMIC=FALSE
-export OMP_PROC_BIND=close OMP_PLACES=cores
+export OMP_PROC_BIND=${OMP_PROC_BIND:-close} OMP_PLACES=${OMP_PLACES:-cores}
+extra_mpi_env=()
+for variable in MKL_NUM_STRIPES MKL_ENABLE_INSTRUCTIONS MKL_VERBOSE KMP_BLOCKTIME OMP_WAIT_POLICY; do
+    if [[ -v $variable ]]; then
+        export "$variable"
+        extra_mpi_env+=(-x "$variable")
+    fi
+done
 export UCX_NET_DEVICES UCX_TLS=rc,sm,self
 export PATH="$(dirname -- "$MPI_LAUNCHER"):$PATH"
 export LD_LIBRARY_PATH="$MPI_LIBRARY_PATH:${LD_LIBRARY_PATH:-}"
@@ -52,7 +59,7 @@ else
     --mca pml ucx -x PATH -x LD_LIBRARY_PATH -x OMP_NUM_THREADS
     -x OPENBLAS_NUM_THREADS -x MKL_NUM_THREADS -x MKL_DYNAMIC
     -x OMP_PROC_BIND -x OMP_PLACES -x UCX_NET_DEVICES -x UCX_TLS
-    "$HPL_BINARY")
+    "${extra_mpi_env[@]}" "$HPL_BINARY")
 fi
 printf '%q ' "${command[@]}" > command.txt
 printf '\n' >> command.txt

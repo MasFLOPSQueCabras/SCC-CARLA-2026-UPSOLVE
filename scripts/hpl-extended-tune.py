@@ -84,6 +84,11 @@ def recover_cases(output, records, template):
                 if int(source.splitlines()[index].split()[0])
                 != int(defaults[index].split()[0])
             },
+            "environment": json.loads((case / "plan.json").read_text()).get(
+                "environment", {}
+            )
+            if (case / "plan.json").exists()
+            else {},
             "exit_status": status,
             "wall_seconds": max(1, finished - begun),
             "wall_time_source": "metadata timestamps; initial startup excluded",
@@ -139,7 +144,7 @@ def main():
     if args.resume:
         records = recover_cases(args.output, records, template)
         (args.output / "attempts.json").write_text(json.dumps(records, indent=2))
-    screen_end = min(start + 2400, deadline - 4200)
+    screen_end = min(start + 3000, deadline - 3600)
     baseline = json.loads(
         Path("/shared/hpl/results/final-large/result.json").read_text()
     )
@@ -167,12 +172,14 @@ def main():
         allowance=240,
         phase="screen",
         package=None,
+        environment=None,
     ):
         parameters = parameters or {}
+        environment = environment or {}
         if phase == "screen":
             for existing in records:
                 if all(
-                    existing.get(k) == v
+                    existing.get(k, {} if k == "environment" else None) == v
                     for k, v in {
                         "phase": phase,
                         "variant": variant,
@@ -183,6 +190,7 @@ def main():
                         "nb": nb,
                         "n": n,
                         "parameters": parameters,
+                        "environment": environment,
                     }.items()
                 ):
                     return existing
@@ -204,6 +212,7 @@ def main():
             "OMP_NUM_THREADS": threads,
             "MPI_MAP_BY": mapping,
             "HPL_TIMEOUT_SECONDS": timeout,
+            **environment,
         }
         (case / "settings.sh").write_text(
             variants[variant]
@@ -227,6 +236,7 @@ def main():
                     "nb": nb,
                     "n": n,
                     "parameters": parameters,
+                    "environment": environment,
                 },
                 indent=2,
             )
@@ -261,6 +271,7 @@ def main():
             "nb": nb,
             "n": n,
             "parameters": parameters,
+            "environment": environment,
             "exit_status": completed.returncode,
             "wall_seconds": time.time() - begun,
         }
@@ -301,6 +312,22 @@ def main():
     for variant in ("openblas", "icx-mkl-openmpi", "icx-mkl-intelmpi"):
         for rpn, threads, p, q in ((18, 2, 6, 9), (12, 3, 6, 6), (6, 6, 3, 6)):
             screen(variant, rpn, threads, p, q, 256)
+    # Intel oneMKL GEMM partitioning: compare against unchanged runtime controls.
+    for variant in ("icx-mkl-openmpi", "icx-mkl-intelmpi"):
+        screen(variant, 36, 1, 6, 18, 192)
+    for environment in ({}, {"MKL_NUM_STRIPES": "1"}, {"MKL_NUM_STRIPES": "3"}):
+        execute("icx-mkl-openmpi", 2, 18, 2, 3, 384, 73728, environment=environment)
+    for stripes in ("1", "3"):
+        execute(
+            "icx-mkl-openmpi",
+            6,
+            6,
+            3,
+            6,
+            256,
+            73728,
+            environment={"MKL_NUM_STRIPES": stripes},
+        )
     good = sorted(
         (r for r in records if "result" in r),
         key=lambda r: r["result"]["gflops"],
@@ -383,6 +410,8 @@ def main():
                         str(package),
                         "--commit",
                         args.commit,
+                        "--purpose",
+                        "tuning",
                     ],
                     check=True,
                 )
@@ -401,6 +430,7 @@ def main():
             allowance=allowance,
             phase="repeat" if index else "large",
             package=package,
+            environment=candidate.get("environment", {}),
         )
     (args.output / "completed.json").write_text(
         json.dumps(
