@@ -24,7 +24,7 @@ configuration:
     hpl_nb: 128
     hpl_p: 1
     hpl_q: 3
-    build_jobs: 16
+    build_jobs: 36
 network:
   domain: cabrita.local
   subnet: 10.2.72.0/24

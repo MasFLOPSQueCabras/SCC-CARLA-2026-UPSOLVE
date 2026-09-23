@@ -30,6 +30,7 @@ def inventory() -> None:
                     "/redfish/v1/Systems/1/Storage/",
                     "/redfish/v1/Systems/1/SmartStorage/ArrayControllers/",
                     "/redfish/v1/Systems/1/Bios/",
+                    "/redfish/v1/Systems/1/Bios/Boot/",
                     "/redfish/v1/Managers/1/VirtualMedia/",
                 ]
                 while pending:
@@ -37,8 +38,10 @@ def inventory() -> None:
                     if path in data:
                         continue
                     response = client.get(path)
-                    if response.status_code == 404:
-                        data[path] = {"status": 404}
+                    if response.status_code == 404 or (
+                        response.status_code == 400 and path.endswith("/Storage/")
+                    ):
+                        data[path] = {"status": response.status_code}
                         continue
                     response.raise_for_status()
                     value = response.json()

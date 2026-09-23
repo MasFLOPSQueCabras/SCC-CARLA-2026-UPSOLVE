@@ -16,8 +16,9 @@
 ## Hardware gates
 
 ISO-only installation, SSH and reboot persistence: passed.
-Basic Ansible, full HPL configuration, smoke,
-performance tuning and final submission are pending. No FLOPS result is claimed.
+Basic Ansible and its repeat configuration: passed.
+Full HPL configuration, smoke, performance tuning and final submission are pending.
+No FLOPS result is claimed.
 
 ## ISO-stage issues found and repaired
 
@@ -63,6 +64,17 @@ HPL configuration now uses those verified devices and team-specific IPoIB addres
 `10.148.72.1–3/24`. Reboot persistence passed at 17:22 UTC on all three nodes,
 with changed boot IDs and working passwordless sudo. Evidence: `reboot.od9dqzgx/`.
 
-## ISO + basic Ansible — in progress
+## ISO + basic Ansible — passed 2026-09-23 17:45 UTC
 
-Fresh installation started at 17:22 UTC.
+Fresh installation started at 17:22 UTC. All three nodes passed installation,
+SSH, sudo, network and repository checks. Initial configuration completed with
+11 successful tasks and four changes per node. The repeat completed with zero
+changes, zero failures and zero unreachable hosts. All nine peer SSH checks passed.
+Evidence: `basic.UgsiaS/`, including both configuration logs.
+
+## ISO + full HPL setup — in progress
+
+Fresh installation started at 17:46 UTC. Source builds use 36 jobs on the head node.
+The user confirmed a deadline two hours after 17:43:32 UTC: **19:43:32 UTC today**.
+Tuning must fit the time remaining after setup, with time reserved for validation
+and delivery; the earlier two-hour tuning cap does not extend this deadline.

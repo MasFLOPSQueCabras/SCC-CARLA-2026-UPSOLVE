@@ -5,6 +5,11 @@ Use [Cabrita (cabritactl)](https://github.com/MasFLOPSQueCabras/cabrita), based 
 hardware-tested commit before packaging the submission. Development and tests
 alone do not establish a valid competition result.
 
+Use the patched `1.0.1.dev1` branch for this allocation. It contains the physical
+UEFI/Kickstart boot corrections, HPE virtual-media boot handling, confirmed power
+transitions and transient BMC timeout recovery exercised by these hardware runs.
+An unpatched `1.0.0` installation does not include these fixes.
+
 ## Controller and bastion
 
 ```bash
@@ -49,6 +54,8 @@ BMC inventory identifies three HPE XL230k Gen10 systems, each with two Xeon Gold
 Kickstart explicitly selects the Ethernet MAC and checks the disk serial in
 `%pre --erroronfail` before partitioning `/dev/nvme0n1`. Reverify these identities
 against live inventory before using this workflow on a different allocation.
+Powered-off iLO inventory can be stale: refresh it after POST and compare disk
+serials with the installed OS. The live BIOS boot inventory includes NVMe identity.
 `verified-manifests.sha256` binds the reviewed manifests and Kickstart together.
 The installed OS verifies `ibs5f0` and `mlx5_0:1` with active 100 Gb/s EDR on all
 three nodes. HPL uses team-specific IPoIB addresses `10.148.72.1–3/24`.
@@ -89,7 +96,8 @@ bash /shared/hpl/scripts/hpl-eval.sh /shared/hpl/HPL.dat \
   /shared/hpl/hpl-settings.sh /shared/hpl/results/smoke
 bash /shared/hpl/scripts/hpl-build-evidence.sh /shared/hpl/build-evidence
 bash /shared/hpl/scripts/hpl-tune.sh /shared/hpl/HPL.dat \
-  /shared/hpl/hpl-settings.sh /shared/hpl/tuning --seconds 7200
+  /shared/hpl/hpl-settings.sh /shared/hpl/tuning --seconds 7200 \
+  --hosts 10.148.72.1 10.148.72.2 10.148.72.3
 ```
 
 The smoke case uses N=4096, NB=128, a 1×3 grid, three ranks and one thread per rank.
@@ -97,7 +105,10 @@ Verify IB links, NFS access, peer SSH, loaded MPI/BLAS libraries, and MPI execut
 on all three nodes before tuning. The same source-built software is used for
 smoke and performance runs. Spack binary caches and concretizer reuse are disabled.
 
-The two-hour tuning timer starts after the complete setup passes its smoke test.
+The tuning timer starts after the complete setup passes its smoke test. Two hours
+is a maximum: reduce `--seconds` to fit the submission deadline, reserving time
+for packaging, replay validation and delivery. For the 2026-09-23 run, the user
+confirmed a deadline of 19:43:32 UTC.
 It compares physical-core MPI and NUMA-aware hybrid layouts, block sizes
 128/192/256, and two near-square grids. Larger matrices are limited by available
 memory, workspace reserve, measured speed and remaining runtime. Every attempt
