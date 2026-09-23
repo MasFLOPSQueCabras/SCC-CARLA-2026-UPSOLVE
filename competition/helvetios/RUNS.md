@@ -278,3 +278,21 @@ alone do not establish the optimum block size near the memory limit. This
 selection requires an already numerically validated case and is recorded in
 `search-plan.json` with its rationale. The reproduced 4474-GFLOPS OpenBLAS
 result remains an eligible best result throughout.
+
+The large Intel/oneMKL/Intel MPI NB=384 run passed at N=235008:
+**4378.7 GFLOPS**, 1976.13 seconds, residual 0.00062885145. Its matrix requires
+about 26% more arithmetic than the N=217728 OpenBLAS winner, but its measured
+throughput is 2.1% lower. A final GCC/OpenBLAS NB=384 comparison at N=138240
+passed at **4328.6 GFLOPS**, 406.88 seconds, residual 0.000791275906.
+
+At the user's request, BLIS 2.0 (revision
+`e8566eb3e773fb54d11b33e371d13f22d2941e50`) was built from source using GCC,
+its `skx` configuration, and default single-thread execution. Netlib HPL was
+built with GCC `-O3 -march=skylake-avx512` and the existing OpenMPI/UCX stack.
+`scripts/hpl-build-blis.sh` reproduces the build; `hpl-blis-compare.py` runs a
+smoke test and the matched N=72576, NB=192, 6×18 screen, after the preceding
+benchmark finishes. The initial configure probe failed due to literal shell
+quotes in the generated BLAS library list; removing those quotes fixed it.
+Both failed and corrected build logs are preserved. `ldd` confirms libblis.so.4
+and OpenMPI are linked, with no OpenBLAS or oneMKL dependency. The N=6912 smoke
+passed with residual 0.00451529922.
