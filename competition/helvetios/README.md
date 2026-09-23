@@ -60,6 +60,12 @@ serials with the installed OS. The live BIOS boot inventory includes NVMe identi
 The installed OS verifies `ibs5f0` and `mlx5_0:1` with active 100 Gb/s EDR on all
 three nodes. HPL uses team-specific IPoIB addresses `10.148.72.1–3/24`.
 
+All deployment manifests request `bios_profile: hpc`. Live BIOS reads confirmed
+`HighPerformanceCompute(HPC)`, static high performance power regulation, turbo
+enabled, no C-states and maximum uncore frequency on all three nodes. The HPL
+rank mapping uses 36 physical cores per node despite BIOS hyperthreading being
+enabled. Retain active BIOS attributes with the submission build evidence.
+
 Run these gates in order. **Each command reinstalls all three declared OS disks.**
 Stop on any failure, diagnose it, and repeat the affected gate after fixing it.
 

@@ -143,3 +143,51 @@ Intel MPI used OFI mlx; OpenMPI used source-built UCX RC. The two hybrid layouts
 (2×18 and 4×9 ranks×threads per node) were slower in this screen. Compiler and
 library packages are permitted by the user's clarification; no vendor HPL
 executable was used. Detailed attempts remain in `oneapi-comparison/`.
+
+At N=101376 with NB=256 and grid 6×18, the detached baseline rerun passed at
+**4020.0 GFLOPS**, 172.78 seconds, residual 0.00114003923. The equivalent icx/
+oneMKL/OpenMPI run passed at **3767.7 GFLOPS**, 184.35 seconds, residual
+0.000779295629. The baseline was selected for the final N=129024 run and replay.
+Its recorded HPL flags are `CFLAGS=-O3` plus Spack wrapper target arguments
+`-march=skylake-avx512 -mtune=skylake-avx512`; build system: configure/GNU make.
+The final local checks passed: 129 tests, 13 infrastructure skips, Ruff and ty.
+
+## Final larger result and initial delivery — passed 19:33 UTC
+
+N=129024, NB=256, grid 6×18, 108 MPI ranks (36 per node), one OpenBLAS thread
+per rank: **4179.1 GFLOPS**, 342.65 seconds, residual **0.00089969177**.
+The process exited zero and passed the full result validator. Rank binding logs
+record 36 ranks on each node; the executable checksum matches build evidence.
+
+The current best package was delivered to `/home/scct-2672/submission` on the
+bastion at **2026-09-23 19:33:19 UTC**. All 34 checksums passed. It includes the
+input, complete output/stderr, Bash reproduction scripts, source ZIP, exact
+build records and README pinned to tested Cabrita commit
+`2e862636047dcbb4fcfe30136a62ac85ce2b7608`. The full packaged replay is running;
+its final outcome and any replacement will be recorded below.
+
+At 19:36 UTC, live Redfish reads reconfirmed active
+`WorkloadProfile=HighPerformanceCompute(HPC)` on all three nodes, with
+`PowerRegulator=StaticHighPerf`, `EnergyPerfBias=MaxPerf`, `ProcTurbo=Enabled`,
+`MinProcIdlePower=NoCStates`, `UncoreFreqScaling=Maximum` and
+`EnergyEfficientTurbo=Disabled`. All three deployment manifests request the HPC
+BIOS profile. Hyperthreading is enabled, but the HPL mapping uses only physical
+cores. Active BIOS attribute snapshots are retained with build evidence.
+
+## Full packaged replay — passed 19:38 UTC
+
+The packaged Bash launcher reran N=129024 successfully: **4170.6 GFLOPS**,
+343.34 seconds, residual **0.00089969177**, MPI exit zero. This is within 0.21%
+of the original result. The original **4179.1 GFLOPS** remains the highest
+complete, validated measurement and is the only submitted result. The final
+package adds the live HPC BIOS attribute snapshots and README description.
+Local evidence: `submission-final/`, `final-runs.tar.gz`,
+`tuning-and-toolchains.tar.gz`, and the delivery receipts.
+
+Final delivery completed at **2026-09-23 19:39:08 UTC**, before the confirmed
+19:43:32 UTC deadline, to `/home/scct-2672/submission`. All **37** checksums
+passed on the bastion. SHA-256 of `SHA256SUMS`:
+`23b9c5b3671f9dd160d3eb7071c78ed28b54e8f4beacea88069486cbc93f76ab`.
+A fresh audit of **42** complete tuning/comparison runs revalidated their full
+outputs and exit statuses and confirmed **4179.1 GFLOPS** as the maximum.
+The final package retains the exact replayed input and Bash launch scripts.
