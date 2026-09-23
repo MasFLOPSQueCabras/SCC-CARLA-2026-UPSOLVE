@@ -218,3 +218,24 @@ Primary references and the resulting controls:
 
 Runtime overrides are retained through checkpoint recovery and the packaged
 repeat. A failed or incomplete solve cannot become the selected result.
+
+At the end of screening, 33 of 34 attempts passed; the final six-thread stripe
+screen exceeded its remaining 92-second screening budget (exit 124), so it has
+no accepted score. The leading screen was OpenBLAS, N=72576, NB=192, P×Q=6×18,
+108 ranks, one thread/rank: **3969.6 GFLOPS**. The same case with BCAST=3 reached
+3957.2 GFLOPS. Intel compiler + oneMKL + Intel MPI at the same dimensions reached
+3930.1 GFLOPS; using Open MPI reached 3676.4 GFLOPS.
+
+At N=73728, NB=384, six MPI ranks and 18 threads/rank, oneMKL + Open MPI yielded:
+
+| GEMM partitioning | GFLOPS | Residual |
+| --- | ---: | ---: |
+| Default | 3017.0 | 0.00137878056 |
+| `MKL_NUM_STRIPES=1` | 2904.1 | 0.00123332544 |
+| `MKL_NUM_STRIPES=3` | 2947.1 | 0.00120888907 |
+
+Live `/proc` inspection confirmed 18 compute workers bound to distinct physical
+cores within each socket on all nodes, `MKL_DYNAMIC=FALSE`, and the stripe setting
+propagated to remote ranks. The processes loaded `libmkl_avx512.so.3` and
+`libmkl_intel_thread.so.3`. Overrides did not beat the default in this comparison.
+The large candidate starts at N=217728 with the leading OpenBLAS configuration.
