@@ -108,6 +108,13 @@ def main():
     parser.add_argument("--deadline", required=True, help="ISO 8601 UTC deadline")
     parser.add_argument("--resume", action="store_true")
     parser.add_argument(
+        "--plan",
+        type=Path,
+        help="Trusted JSON with cases, variant settings, and validated seed records",
+    )
+    parser.add_argument("--screen-seconds", type=int, default=3000)
+    parser.add_argument("--large-runs", type=int, choices=(1, 2), default=2)
+    parser.add_argument(
         "--commit", help="Full tested Cabrita hash for the packaged repeat"
     )
     args = parser.parse_args()
@@ -138,13 +145,27 @@ def main():
         variants[name] = Path(
             f"/shared/hpl/oneapi-comparison/{name}-36x1/settings.sh"
         ).read_text()
+    plan = json.loads(args.plan.read_text()) if args.plan else None
+    if plan:
+        for name, settings_path in plan.get("variants", {}).items():
+            variants[name] = Path(settings_path).read_text()
+        (args.output / "search-plan.json").write_text(json.dumps(plan, indent=2))
     records = (
         json.loads((args.output / "attempts.json").read_text()) if args.resume else []
     )
+    if plan and not args.resume:
+        for seed in plan.get("seed_records", []):
+            run = Path(seed["directory"])
+            if (run / "exit-status.txt").read_text().strip() != "0":
+                raise ValueError("Seed must be a completed successful run")
+            seed["result"] = HELPERS["HELPERS"]["result"](
+                (run / "HPL.out").read_text(), (run / "HPL.dat").read_text()
+            )
+            records.append(seed)
     if args.resume:
         records = recover_cases(args.output, records, template)
         (args.output / "attempts.json").write_text(json.dumps(records, indent=2))
-    screen_end = min(start + 3000, deadline - 3600)
+    screen_end = min(start + args.screen_seconds, deadline - 1800)
     baseline = json.loads(
         Path("/shared/hpl/results/final-large/result.json").read_text()
     )
@@ -198,7 +219,7 @@ def main():
         if phase == "screen":
             remaining = min(remaining, screen_end - time.time())
         timeout = int(min(allowance, remaining))
-        if timeout < 30:
+        if timeout < (100 if phase == "screen" else 30):
             return None
         case = args.output / f"case-{len(records) + 1:03}"
         case.mkdir()
@@ -302,70 +323,76 @@ def main():
         n = 73728 // alignment * alignment
         return execute(variant, rpn, threads, p, q, nb, n, parameters, allowance=240)
 
-    # Larger screens expose communication and threading costs hidden at N=32k.
-    for nb in (256, 384, 512, 192, 320, 640):
-        for p, q in ((6, 18), (9, 12)):
-            screen("openblas", 36, 1, p, q, nb)
-    for variant in ("icx-mkl-openmpi", "icx-mkl-intelmpi"):
-        for nb in (256, 384, 512):
-            screen(variant, 36, 1, 6, 18, nb)
-    for variant in ("openblas", "icx-mkl-openmpi", "icx-mkl-intelmpi"):
-        for rpn, threads, p, q in ((18, 2, 6, 9), (12, 3, 6, 6), (6, 6, 3, 6)):
-            screen(variant, rpn, threads, p, q, 256)
-    # Intel oneMKL GEMM partitioning: compare against unchanged runtime controls.
-    for variant in ("icx-mkl-openmpi", "icx-mkl-intelmpi"):
-        screen(variant, 36, 1, 6, 18, 192)
-    for environment in ({}, {"MKL_NUM_STRIPES": "1"}, {"MKL_NUM_STRIPES": "3"}):
-        execute("icx-mkl-openmpi", 2, 18, 2, 3, 384, 73728, environment=environment)
-    for stripes in ("1", "3"):
-        execute(
-            "icx-mkl-openmpi",
-            6,
-            6,
-            3,
-            6,
-            256,
-            73728,
-            environment={"MKL_NUM_STRIPES": stripes},
+    if plan:
+        for case in plan["cases"]:
+            execute(**case)
+    else:
+        # Larger screens expose communication and threading costs hidden at N=32k.
+        for nb in (256, 384, 512, 192, 320, 640):
+            for p, q in ((6, 18), (9, 12)):
+                screen("openblas", 36, 1, p, q, nb)
+        for variant in ("icx-mkl-openmpi", "icx-mkl-intelmpi"):
+            for nb in (256, 384, 512):
+                screen(variant, 36, 1, 6, 18, nb)
+        for variant in ("openblas", "icx-mkl-openmpi", "icx-mkl-intelmpi"):
+            for rpn, threads, p, q in ((18, 2, 6, 9), (12, 3, 6, 6), (6, 6, 3, 6)):
+                screen(variant, rpn, threads, p, q, 256)
+        # Intel oneMKL GEMM partitioning: compare against unchanged runtime controls.
+        for variant in ("icx-mkl-openmpi", "icx-mkl-intelmpi"):
+            screen(variant, 36, 1, 6, 18, 192)
+        for environment in ({}, {"MKL_NUM_STRIPES": "1"}, {"MKL_NUM_STRIPES": "3"}):
+            execute("icx-mkl-openmpi", 2, 18, 2, 3, 384, 73728, environment=environment)
+        for stripes in ("1", "3"):
+            execute(
+                "icx-mkl-openmpi",
+                6,
+                6,
+                3,
+                6,
+                256,
+                73728,
+                environment={"MKL_NUM_STRIPES": stripes},
+            )
+        good = sorted(
+            (r for r in records if "result" in r),
+            key=lambda r: r["result"]["gflops"],
+            reverse=True,
         )
+        if not good:
+            raise SystemExit("No valid screen results")
+        top = good[0]
+        # Compare algorithmic alternatives on the strongest measured layout.
+        changes = [
+            {"bcast": 3},
+            {"bcast": 4},
+            {"bcast": 5},
+            {"depth": 0},
+            {"depth": 2},
+            {"pfact": 1, "rfact": 2},
+            {"nbmin": 8},
+            {"ndiv": 4},
+            {"pmap": 1},
+            {"equil": 0},
+        ]
+        for parameters in changes:
+            screen(
+                top["variant"],
+                top["rpn"],
+                top["threads"],
+                top["p"],
+                top["q"],
+                top["nb"],
+                parameters,
+            )
     good = sorted(
         (r for r in records if "result" in r),
         key=lambda r: r["result"]["gflops"],
         reverse=True,
     )
     if not good:
-        raise SystemExit("No valid screen results")
-    top = good[0]
-    # Compare algorithmic alternatives on the strongest measured layout.
-    changes = [
-        {"bcast": 3},
-        {"bcast": 4},
-        {"bcast": 5},
-        {"depth": 0},
-        {"depth": 2},
-        {"pfact": 1, "rfact": 2},
-        {"nbmin": 8},
-        {"ndiv": 4},
-        {"pmap": 1},
-        {"equil": 0},
-    ]
-    for parameters in changes:
-        screen(
-            top["variant"],
-            top["rpn"],
-            top["threads"],
-            top["p"],
-            top["q"],
-            top["nb"],
-            parameters,
-        )
-    good = sorted(
-        (r for r in records if "result" in r),
-        key=lambda r: r["result"]["gflops"],
-        reverse=True,
-    )
-    # Prefer one memory-heavy candidate and its packaged repeat over three smaller solves.
-    for index in range(2):
+        raise SystemExit("No validated candidate for the large run")
+    # Prefer a memory-heavy candidate, with an optional packaged repeat.
+    for index in range(args.large_runs):
         candidate = (
             good[0]
             if index == 0
@@ -374,7 +401,7 @@ def main():
                 key=lambda r: r["result"]["gflops"],
             )
         )
-        allowance = (deadline - time.time() - 300) / (2 - index)
+        allowance = (deadline - time.time() - 300) / (args.large_runs - index)
         nb, p, q = candidate["nb"], candidate["p"], candidate["q"]
         alignment = nb * math.lcm(p, q)
         # Use the measured N=129024 baseline to avoid extrapolating only tiny cases.

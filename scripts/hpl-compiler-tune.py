@@ -19,6 +19,11 @@ def main():
     parser.add_argument("output", type=Path)
     parser.add_argument("--deadline", required=True)
     parser.add_argument("--after", required=True, type=Path)
+    parser.add_argument(
+        "--variant",
+        choices=("icx-mkl-intelmpi-fast", "icx-mkl-intelmpi-mixed"),
+        default="icx-mkl-intelmpi-fast",
+    )
     args = parser.parse_args()
     deadline = dt.datetime.fromisoformat(args.deadline).timestamp()
     args.output.mkdir(parents=True, exist_ok=False)
@@ -26,7 +31,7 @@ def main():
         if deadline - time.time() < 600:
             raise SystemExit("Insufficient remaining time; no additional build started")
         time.sleep(10)
-    variant = "icx-mkl-intelmpi-fast"
+    variant = args.variant
     with (args.output / "build-launcher.log").open("w") as log:
         subprocess.run(
             [
@@ -105,7 +110,7 @@ def main():
     screen = execute("screen", 72576, 192, min(180, deadline - time.time() - 60))
     if "result" not in screen:
         raise SystemExit("Compiler variant failed screen validation")
-    allowance = deadline - time.time() - 90
+    allowance = min(900, deadline - time.time() - 90)
     if allowance >= 150:
         # Reserve 15% of estimated solve time and 30 seconds of launch overhead.
         speed = screen["result"]["gflops"] * 1e9

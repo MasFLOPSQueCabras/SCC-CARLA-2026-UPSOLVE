@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build reference HPL ourselves against explicitly selected compiler/MPI/BLAS.
 set -euo pipefail
-variant=${1:?Usage: hpl-build-oneapi.sh gcc-mkl-openmpi|icx-mkl-openmpi|icx-mkl-intelmpi|icx-mkl-intelmpi-fast}
+variant=${1:?Usage: hpl-build-oneapi.sh gcc-mkl-openmpi|icx-mkl-openmpi|icx-mkl-intelmpi|icx-mkl-intelmpi-fast|icx-mkl-intelmpi-mixed}
 root=/shared/hpl/intel-builds/$variant
 mkdir -p "$root"
 test ! -e "$root/install/bin/xhpl"
@@ -22,12 +22,12 @@ case "$variant" in
         blas="-L$mkl/lib -L$compiler/lib -Wl,-rpath,$mkl/lib -Wl,-rpath,$compiler/lib -lmkl_intel_lp64 -lmkl_intel_thread -lmkl_core -liomp5 -lpthread -lm -ldl"
         flags='-O3 -xCORE-AVX512 -fp-model=precise'
         ;;
-    icx-mkl-intelmpi|icx-mkl-intelmpi-fast)
+    icx-mkl-intelmpi|icx-mkl-intelmpi-fast|icx-mkl-intelmpi-mixed)
         export I_MPI_ROOT="$intelmpi" I_MPI_CC="$compiler/bin/icx"
         cc=$intelmpi/bin/mpiicx
         blas="-L$mkl/lib -L$compiler/lib -Wl,-rpath,$mkl/lib -Wl,-rpath,$compiler/lib -lmkl_intel_lp64 -lmkl_intel_thread -lmkl_core -liomp5 -lpthread -lm -ldl"
         flags='-O3 -xCORE-AVX512 -fp-model=precise'
-        if [[ $variant == icx-mkl-intelmpi-fast ]]; then
+        if [[ $variant == icx-mkl-intelmpi-fast || $variant == icx-mkl-intelmpi-mixed ]]; then
             flags='-O3 -xCORE-AVX512 -fp-model=fast=2 -qopt-zmm-usage=high'
         fi
         ;;
@@ -54,7 +54,15 @@ PY
     printf 'CC=%s\nCFLAGS=%s\nBLAS=%s\n' "$cc" "$flags" "$blas"
     cd "$root/source"
     ./configure --prefix="$root/install" "CC=$cc" "CFLAGS=$flags" "LDFLAGS=$blas" "LIBS=$blas"
-    make -j4
+    if [[ $variant == icx-mkl-intelmpi-mixed ]]; then
+        precise_flags='-O3 -xCORE-AVX512 -fp-model=precise -qopt-zmm-usage=high'
+        printf 'Machine precision and validation CFLAGS=%s\n' "$precise_flags"
+        make -C src auxil/HPL_dlamch.o pauxil/HPL_pdlamch.o "CFLAGS=$precise_flags"
+        make -C src -j4
+        make -C testing -j4 "CFLAGS=$precise_flags"
+    else
+        make -j4
+    fi
     make install
     ldd "$root/install/bin/xhpl"
     sha256sum "$root/install/bin/xhpl"

@@ -239,3 +239,26 @@ cores within each socket on all nodes, `MKL_DYNAMIC=FALSE`, and the stripe setti
 propagated to remote ranks. The processes loaded `libmkl_avx512.so.3` and
 `libmkl_intel_thread.so.3`. Overrides did not beat the default in this comparison.
 The large candidate starts at N=217728 with the leading OpenBLAS configuration.
+
+The first large post-submission result reached **4474.0 GFLOPS** at N=217728,
+NB=192, P×Q=6×18, 108 ranks and one thread/rank (1538.01 seconds; residual
+0.000729418605). The exact packaged replay passed at **4450.0 GFLOPS** with the
+same residual, within 0.54%. The original submission's manifest hash and all
+37 files were verified unchanged during tuning.
+
+The user subsequently authorized one additional hour, extending the tuning
+cutoff from 21:44:50 to **22:44:50 UTC**. New results remain separate.
+
+[Compiler floating-point controls](https://www.intel.com/content/www/us/en/docs/dpcpp-cpp-compiler/developer-guide-reference/2026-0/floating-point-optimizations.html)
+and [AVX-512 vector-generation controls](https://www.intel.com/content/www/us/en/docs/dpcpp-cpp-compiler/developer-guide-reference/2026-0/qopt-zmm-usage-qopt-zmm-usage.html)
+motivated a separate `icx-mkl-intelmpi-fast` build using
+`-O3 -xCORE-AVX512 -fp-model=fast=2 -qopt-zmm-usage=high`. Its smoke test failed:
+HPL's machine-precision calculation returned zero, and its residual was infinite.
+The validator rejected this result even though MPI itself exited zero.
+
+The corrected `icx-mkl-intelmpi-mixed` build retains those flags for computational
+code but compiles HPL_dlamch, HPL_pdlamch, and all testing/validation code with
+`-fp-model=precise`. No source algorithm or residual threshold was changed.
+The build log records each override. Its N=6912 smoke test passed with machine
+precision 1.110223e-16 and residual 0.00186949013. Failed and corrected builds and
+runs are kept separately; the unsuccessful build is never eligible for selection.

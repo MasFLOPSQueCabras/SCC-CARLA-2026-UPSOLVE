@@ -3,7 +3,7 @@
 set -euo pipefail
 variant=${1:?Pass the build variant}
 dest=${2:?Pass a new evidence directory}
-case "$variant" in gcc-mkl-openmpi|icx-mkl-openmpi|icx-mkl-intelmpi|icx-mkl-intelmpi-fast) ;; *) exit 2 ;; esac
+case "$variant" in gcc-mkl-openmpi|icx-mkl-openmpi|icx-mkl-intelmpi|icx-mkl-intelmpi-fast|icx-mkl-intelmpi-mixed) ;; *) exit 2 ;; esac
 root=/shared/hpl/intel-builds/$variant
 test ! -e "$dest"
 cp -a /shared/hpl/build-evidence "$dest"
@@ -35,7 +35,9 @@ HPL 2.3 was compiled from checksum-verified Netlib source using variant
 Intel icx 2026.1.1, and source-built OpenMPI 5.0.5 or Intel MPI 2021.18.1.
 \`selected-hpl-build.log\` records the actual compiler, flags, build output,
 linkage and executable checksum. The selected compiler flags are \`$flags\`.
-HPL is built using configure and GNU make.
+HPL is built using configure and GNU make. For the mixed variant, machine-precision
+routines and the testing/validation code use -fp-model=precise; the build log
+records these per-file overrides. The computational library uses the flags above.
 \`intel-packages.txt\` records exact signed vendor library/compiler RPM versions.
 No vendor HPL executable is used. The user confirmed that compiler/libraries
 are permitted. The only HPL source modification is the configure BLAS probe;

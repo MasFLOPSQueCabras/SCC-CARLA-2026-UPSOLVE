@@ -23,6 +23,7 @@ def main():
             "icx-mkl-openmpi",
             "icx-mkl-intelmpi",
             "icx-mkl-intelmpi-fast",
+            "icx-mkl-intelmpi-mixed",
         ),
         default=("gcc-mkl-openmpi", "icx-mkl-openmpi", "icx-mkl-intelmpi"),
     )
