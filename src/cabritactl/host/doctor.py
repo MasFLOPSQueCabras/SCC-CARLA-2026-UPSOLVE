@@ -8,7 +8,7 @@ import shutil
 import xml.etree.ElementTree as ET
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Literal, cast
 
 from cabritactl.core.executables import find_executable
 from cabritactl.core.resolved import ResolvedCluster
@@ -214,7 +214,8 @@ def collect(cluster: ResolvedCluster) -> list[Check]:
                 for n in m.nodes
                 if n.vm and cluster.resource_name(n) not in {d.name() for d in domains}
             )
-            free = pool.info()[3]
+            # libvirt-python 12.7 misannotates info() as str; it returns integers.
+            free = cast(int, pool.info()[3])
             checks.append(
                 Check(
                     "storage.capacity",
