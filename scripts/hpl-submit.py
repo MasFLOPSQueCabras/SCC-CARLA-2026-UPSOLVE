@@ -16,7 +16,15 @@ def main() -> None:
     parser.add_argument("build_evidence", type=Path)
     parser.add_argument("destination", type=Path)
     parser.add_argument("--commit", required=True)
+    parser.add_argument(
+        "--purpose", choices=("submission", "tuning"), default="submission"
+    )
     args = parser.parse_args()
+    purpose_note = (
+        "Only this measured result is submitted."
+        if args.purpose == "submission"
+        else "This is a separate post-submission tuning package. The on-time submission is unchanged."
+    )
     if not re.fullmatch(r"[a-f0-9]{40}", args.commit):
         parser.error("--commit must be the full tested Cabrita commit hash")
     source = args.run.resolve()
@@ -95,7 +103,7 @@ script’s BLAS probe. `src/modified_source.zip` contains that build-source tree
 Selected completed result: **{result["gflops"]:.6g} GFLOPS**; elapsed HPL time
 {result["seconds"]} seconds; scaled residual {result["residual"]} (threshold 16.0).
 N={result["n"]}, NB={result["nb"]}, process grid {result["p"]} × {result["q"]}.
-Only this measured result is submitted. Full output and stderr are in `output/`.
+{purpose_note} Full output and stderr are in `output/`.
 
 ## Reproduce the installation
 

@@ -198,8 +198,9 @@ nodes:
 
 
 @pytest.mark.parametrize("custom_build", [False, True])
+@pytest.mark.parametrize("purpose", ["submission", "tuning"])
 def test_submission_packages_one_valid_result_with_source(
-    tmp_path, dat, output, custom_build
+    tmp_path, dat, output, custom_build, purpose
 ):
     import subprocess
     import sys
@@ -245,6 +246,8 @@ def test_submission_packages_one_valid_result_with_source(
         str(package),
         "--commit",
         "a" * 40,
+        "--purpose",
+        purpose,
     ]
     completed = subprocess.run(command, capture_output=True, text=True, check=False)
     assert completed.returncode == 0, completed.stderr
@@ -253,6 +256,7 @@ def test_submission_packages_one_valid_result_with_source(
     assert (package / "src/modified_source.zip").is_file()
     readme = (package / "README.md").read_text()
     assert "cabritactl" in readme
+    assert ("on-time submission is unchanged" in readme) is (purpose == "tuning")
     if custom_build:
         assert "Self-built HPL with oneMKL fixture." in readme
         assert "OpenBLAS 0.3.28" not in readme
