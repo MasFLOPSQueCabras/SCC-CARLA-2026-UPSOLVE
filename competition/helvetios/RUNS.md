@@ -332,3 +332,72 @@ During the large run, `turbostat` samples busy-clock frequency, CPU/package
 temperature, thermal counters, and package power every 15 seconds on each node.
 Each monitor has its own bounded runtime. The diagnostic does not change CPU
 frequency, power limits, or BIOS settings.
+
+The fresh panel screens all passed at N=72576, NB=192 and 108 single-thread
+ranks:
+
+| Change from winning settings | GFLOPS |
+| --- | ---: |
+| Baseline | 3966.9 |
+| RFACT=2 | 3983.9 |
+| NBMIN=8 | 3954.0 |
+| NDIV=3 | 3934.9 |
+| RFACT=2 confirmation | 3968.6 |
+
+RFACT=2 did not meet the predefined 1% confirmed improvement criterion. The
+N=235008 large run therefore retained the original baseline panel settings and
+started at 22:54:34 UTC. Before the solve, free-memory checks passed; during the
+solve all nodes retained approximately 36–37 GiB available with zero swap use.
+The competition-script test suite passed (24 tests), as did ruff and ty.
+
+Read-only RAPL sysfs inspection found 140 W long-term and 168 W short-term
+limits for each of the six CPU packages. Initial sustained-load turbostat
+samples showed roughly 279 W summed package power per node, busy clocks around
+1.70–1.79 GHz, and zero CoreThr events. PKG_% approached 200 in the two-socket
+system summary. Per the [turbostat manual](https://raw.githubusercontent.com/torvalds/linux/master/tools/power/x86/turbostat/turbostat.8),
+PKG_% sums package RAPL-throttling time and can exceed 100%; its interpretation
+is model-specific and must be checked against temperatures and power limits.
+These observations point to package power limiting; they do not establish that
+raising a limit would be supported or improve the final score. No power limits
+were changed. BMC health remained OK on all nodes.
+
+The large run completed and passed at **4473.3 GFLOPS**, N=235008, NB=192,
+6×18, 108 ranks, one thread/rank: 1934.32 seconds, residual 0.00090616387,
+MPI exit zero. This is only 0.016% below the existing 4474.0 GFLOPS best and
+provides no evidence of a larger-matrix improvement. All six final experiments
+passed revalidation; no new best-result package was selected.
+
+Across 128 loaded telemetry intervals per node, median busy clocks were
+1752, 1730.5 and 1800 MHz. Median summed package power was 279.18 W on every
+node, near the combined 280 W long-term limit. Peak package temperatures were
+94, 85 and 94°C; all recorded CoreThr event counts were zero. The telemetry
+summary excludes the first two samples and filters Busy% >45; raw traces also
+include final validation, so clock-range maxima should not be treated as
+sustained DGEMM frequencies. These observations strengthen the package-power
+limiting diagnosis, without establishing the benefit of changing those limits.
+
+Full logs, exact inputs/settings, orchestration scripts, final audit, telemetry,
+RAPL limits and BMC health snapshots are saved locally under
+`test-results/helvetios-submission/last-chance-evidence-20260923/` and as
+`~/last-chance-tuning-evidence-20260923.tar.gz` on the bastion. The archive
+contains its own SHA256SUMS. The 4474.0 GFLOPS package remains
+`~/post-submission-tuning-20260923`; the on-time submission remains
+`~/submission`.
+
+## Highest-result submission replacement
+
+The user subsequently explicitly instructed that `submission` contain only
+the highest result, superseding the earlier instruction to preserve the
+on-time package in that directory. At **23:30:00 UTC**, the bastion's
+`/home/scct-2672/submission` was replaced with the single **4474.0 GFLOPS**
+GCC/OpenBLAS/OpenMPI result (N=217728, NB=192, 6×18, 108 ranks, one thread).
+The README identifies it as the submitted result and pins Cabrita commit
+`1943bdc6755e8931a10952d874b8ed25ac75304f`; the exact packaged configuration
+had already passed replay at 4450.0 GFLOPS. The original on-time package was
+moved intact outside submission to
+`/home/scct-2672/submission-on-time-backup-20260923T233000Z`.
+All 37 checksums passed for both the replacement submission and original backup.
+The submission directory contains only the required single-result package:
+README.md, SHA256SUMS, input/, output/, scripts/, and src/. No alternate run
+or backup is nested inside it. The separate post-submission tuning package
+remains available outside submission.
