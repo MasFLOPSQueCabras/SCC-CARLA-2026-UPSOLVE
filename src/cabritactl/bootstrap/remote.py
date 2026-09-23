@@ -27,7 +27,7 @@ class BastionMedia:
     def _remote(
         self, argv: list[str], *, check: bool = True
     ) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(
+        result = subprocess.run(
             [
                 "ssh",
                 "-o",
@@ -37,11 +37,17 @@ class BastionMedia:
                 self.host,
                 shlex.join(argv),
             ],
-            check=check,
+            check=False,
             capture_output=True,
             text=True,
             timeout=1900,
         )
+        if check and result.returncode:
+            raise RuntimeError(
+                f"Bastion command failed (exit {result.returncode}): "
+                f"{result.stderr[-6000:]}"
+            )
+        return result
 
     def _upload(self, source: Path, target: str) -> None:
         subprocess.run(
@@ -148,18 +154,17 @@ class BastionMedia:
                 "Bastion media directory must be absolute or start with ~/"
             )
         self._remote(["mkdir", "-p", root + "/artifacts"])
+        required_tools = ["sha256sum", "flock", "rsync"]
+        if bootstrap.build_on == "bastion":
+            required_tools += ["xorriso", "curl", "mcopy"]
+            if bootstrap.method == BootstrapMethod.OEMDRV:
+                required_tools += ["mkfs.vfat"]
         self._remote(
             [
                 "python3",
                 "-c",
                 "import shutil,sys; missing=[x for x in sys.argv[1:] if shutil.which(x) is None]; assert not missing, 'Missing bastion tools: '+str(missing)",
-                "xorriso",
-                "curl",
-                "sha256sum",
-                "flock",
-                "rsync",
-                "mkfs.vfat",
-                "mcopy",
+                *required_tools,
             ]
         )
         self._remote(

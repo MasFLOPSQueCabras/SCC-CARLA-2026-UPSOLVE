@@ -32,6 +32,9 @@ Use `build_on: local` for libvirt. For Helvetios, `bastion` downloads URL source
 and builds media on the bastion; local ISO sources are uploaded with resumable
 rsync. Explicit `local` builds upload completed artifacts. Builds preserve the
 source ISO's BIOS and UEFI boot metadata through xorriso's replay operation.
+The builder also patches GRUB inside `images/efiboot.img` using `mcopy` and
+points GPT at the patched EFI image. Editing only the ISO-visible GRUB menu
+does not update the separate FAT boot menu used by physical UEFI firmware.
 Base images and completed builds are checksum verified and published atomically.
 The bastion checks required tools and free space before preparing media.
 

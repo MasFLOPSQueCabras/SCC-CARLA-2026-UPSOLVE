@@ -112,6 +112,8 @@ class RedfishClient:
         self.timeout = timeout
         self.session_location: str | None = None
         self.auth_token: str | None = None
+        self.login_error = "authentication failed"
+        self.login_transient = False
 
         self._client = httpx2.Client(
             proxy=proxy_url,
@@ -128,14 +130,22 @@ class RedfishClient:
             "UserName": self.bmc_user,
             "Password": self.bmc_password,
         }
-        try:
-            resp = self._client.post(url, json=payload)
-            if resp.status_code in (200, 201):
-                self.auth_token = resp.headers.get("X-Auth-Token")
-                self.session_location = resp.headers.get("Location")
-                return True
-        except httpx2.HTTPError as err:
-            logger.debug("Failed Redfish login on %s: %s", self.bmc_ip, err)
+        for attempt in range(3):
+            try:
+                resp = self._client.post(url, json=payload)
+                if resp.status_code in (200, 201):
+                    self.auth_token = resp.headers.get("X-Auth-Token")
+                    self.session_location = resp.headers.get("Location")
+                    return True
+                self.login_error = f"login returned HTTP {resp.status_code}"
+                self.login_transient = resp.status_code in (429, 502, 503, 504)
+                if resp.status_code not in (429, 502, 503, 504):
+                    break
+            except httpx2.HTTPError as err:
+                self.login_error = f"login transport failed ({type(err).__name__})"
+                self.login_transient = True
+            if attempt < 2:
+                time.sleep(2)
         return False
 
     def logout(self) -> None:
@@ -157,7 +167,10 @@ class RedfishClient:
         self._client.close()
 
     def __enter__(self) -> Self:
-        self.login()
+        if not self.login():
+            self.close()
+            error = ConnectionError if self.login_transient else RuntimeError
+            raise error(f"Redfish {self.login_error} for {self.bmc_ip}")
         return self
 
     def __exit__(
@@ -269,7 +282,7 @@ class BMCController:
             timeout=timeout,
         )
 
-    def get_power_status(self, node_id: int, timeout: float = 2.0) -> str:
+    def get_power_status(self, node_id: int, timeout: float = 15.0) -> str:
         try:
             with self.get_client(node_id, timeout=timeout) as client:
                 resp = client.get("/redfish/v1/Systems/1/")
@@ -278,7 +291,9 @@ class BMCController:
                     if power in ("ON", "OFF"):
                         return power
         except (httpx2.HTTPError, OSError) as err:
-            raise RuntimeError(f"Failed power status on node {node_id}: {err}") from err
+            raise ConnectionError(
+                f"Failed power status on node {node_id}: {err}"
+            ) from err
         return "UNKNOWN"
 
     def power_off(self, node_id: int, graceful: bool = False) -> bool:
@@ -342,7 +357,7 @@ class BMCController:
             with self.get_client(node_id) as client:
                 if not self.power_off(node_id, graceful=False):
                     return False
-                time.sleep(1.0)
+                self._wait_power_state(client, node_id, "OFF")
                 if not self.eject_virtual_media(node_id):
                     return False
 
@@ -358,20 +373,35 @@ class BMCController:
                         {"Image": floppy_url},
                     ).raise_for_status()
 
-                # Set one-time boot to CD
+                # HPE's virtual-media privilege permits this one-time boot setting.
+                # ComputerSystem.Boot requires a separate configuration privilege
+                # which competition accounts need not have.
                 client.patch(
-                    "/redfish/v1/Systems/1/",
-                    {
-                        "Boot": {
-                            "BootSourceOverrideTarget": "Cd",
-                            "BootSourceOverrideEnabled": "Once",
-                        }
-                    },
+                    "/redfish/v1/Managers/1/VirtualMedia/2/",
+                    {"Oem": {"Hpe": {"BootOnNextServerReset": True}}},
                 ).raise_for_status()
-                return self.power_on(node_id)
+                if not self.power_on(node_id):
+                    return False
+                # iLO accepts the request before the chassis powers on. An
+                # immediate OFF observation otherwise looks like the installer's
+                # final shutdown and causes premature media ejection.
+                self._wait_power_state(client, node_id, "ON")
+                return True
         except (httpx2.HTTPError, OSError) as err:
             logger.error("Failed virtual media mount on Node %s: %s", node_id, err)
             return False
+
+    def _wait_power_state(
+        self, client: RedfishClient, node_id: int, expected: str
+    ) -> None:
+        deadline = time.monotonic() + 120
+        while time.monotonic() < deadline:
+            response = client.get("/redfish/v1/Systems/1/")
+            response.raise_for_status()
+            if response.json().get("PowerState", "").upper() == expected:
+                return
+            time.sleep(1)
+        raise TimeoutError(f"Node {node_id} did not reach power state {expected}")
 
     def get_power_metrics(self, node_id: int) -> dict[str, Any] | None:
         try:

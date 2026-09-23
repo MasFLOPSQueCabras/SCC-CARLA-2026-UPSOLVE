@@ -1,0 +1,45 @@
+---
+- name: Configure basic operations without MPI, BLAS, NFS, or HPL
+  hosts: cluster
+  become: true
+  any_errors_fatal: true
+  vars:
+    cluster_user: scct-2672
+    cluster_user_home: /home/scct-2672
+    transport: tcp
+    cluster_addresses:
+      node1: 10.2.72.1
+      node2: 10.2.72.2
+      node3: 10.2.72.3
+  pre_tasks:
+    - name: Install operational packages
+      ansible.builtin.dnf:
+        name: [curl, python3, openssh-clients, firewalld]
+        state: present
+    - name: Write cluster identities
+      ansible.builtin.template:
+        src: ../../src/cabritactl/ansible/roles/common/templates/hosts.j2
+        dest: /etc/hosts
+        mode: '0644'
+    - name: Start the firewall
+      ansible.builtin.systemd_service:
+        name: firewalld
+        state: started
+        enabled: true
+    - name: Keep management and peer SSH available
+      ansible.posix.firewalld:
+        service: ssh
+        state: enabled
+        permanent: true
+        immediate: true
+  roles:
+    - cluster_ssh
+  tasks:
+    - name: Verify key-based peer SSH
+      become_user: '{{ cluster_user }}'
+      ansible.builtin.command:
+        argv: [ssh, -o, ConnectTimeout=10, '{{ item }}', hostname]
+      loop: '{{ groups["cluster"] }}'
+      changed_when: false
+      register: peer_identity
+      failed_when: peer_identity.rc != 0 or peer_identity.stdout | trim != item

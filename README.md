@@ -55,6 +55,11 @@ Start with the [local quickstart](QUICKSTART.md). Read about
 [migration](docs/migration.md), [architecture](docs/architecture.md), and
 [troubleshooting](docs/troubleshooting.md).
 
+The [Helvetios submission workflow](competition/helvetios/README.md) contains
+the staged installation checks, reproducible Bash HPL runners, bounded tuning,
+and single-result submission packaging. Its [run record](competition/helvetios/RUNS.md)
+distinguishes completed checks from pending hardware validation.
+
 [Release validation](docs/release-validation.md) distinguishes real VM evidence
 from outstanding hardware checks. [Future work](docs/roadmap.md) covers planned
 providers and workflows.

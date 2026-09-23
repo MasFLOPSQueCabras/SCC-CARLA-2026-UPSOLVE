@@ -49,6 +49,6 @@
   when: spack_specification.changed or not installed_environment.stat.exists
 - name: Install changed or missing software
   ansible.builtin.command:
-    argv: ['{{ nfs_mount_dir }}/spack/bin/spack', -e, '{{ nfs_mount_dir }}/environment', install, '-j{{ build_jobs }}']
+    argv: ['{{ nfs_mount_dir }}/spack/bin/spack', -e, '{{ nfs_mount_dir }}/environment', install, --no-cache, --keep-stage, --show-log-on-error, '-j{{ build_jobs }}']
   become_user: '{{ cluster_user }}'
   when: spack_specification.changed or not installed_environment.stat.exists

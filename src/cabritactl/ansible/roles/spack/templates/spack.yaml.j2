@@ -1,8 +1,9 @@
 spack:
   specs:
-    - hpl@2.3 ^openmpi@5.0.5 fabrics={{ 'ucx' if transport == 'ucx' else 'none' }} ^openblas@0.3.28
+    - hpl@2.3 ^openmpi@5.0.5 fabrics={{ 'ucx' if transport == 'ucx' else 'none' }} ^openblas@0.3.28 threads=openmp
   concretizer:
     unify: true
+    reuse: false
   view: {{ nfs_mount_dir }}/environment/view
   config:
     install_tree:

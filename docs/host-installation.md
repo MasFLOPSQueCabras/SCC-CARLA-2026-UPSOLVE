@@ -65,7 +65,8 @@ sudo apt install mtools dosfstools libguestfs-tools zstd
 
 QEMU/KVM runs guests; libvirt manages VM lifecycle, storage, networking and
 confinement. Development packages compile `libvirt-python`. OVMF supplies UEFI;
-xorriso builds installation media. `mtools` and `dosfstools` build OEMDRV media.
+xorriso builds installation media. `mtools` updates embedded EFI boot menus;
+`mtools` and `dosfstools` also build OEMDRV media.
 Golden-image capture additionally uses virt-inspector, virt-sysprep and zstd.
 GUI tools such as virt-manager and cockpit-machines are optional.
 

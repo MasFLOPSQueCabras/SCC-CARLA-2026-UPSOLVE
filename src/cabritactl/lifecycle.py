@@ -1,6 +1,7 @@
 """Provider operations used by the lifecycle service."""
 
 import json
+import logging
 import os
 import socket
 import subprocess
@@ -22,6 +23,8 @@ from cabritactl.core.providers.base import NodeProvider, PowerState
 from cabritactl.core.resolved import ResolvedCluster
 from cabritactl.core.templating import TemplateEngine
 from cabritactl.ssh import is_ssh_authenticated
+
+logger = logging.getLogger(__name__)
 
 
 class ProviderBackend:
@@ -183,9 +186,21 @@ class ProviderBackend:
         finalized = not installation
         while time.monotonic() < deadline:
             reachable = self._reachable(node)
-            if not finalized and (
-                reachable or self.provider.get_power_status(node.id) == PowerState.OFF
-            ):
+            installation_finished = reachable
+            if not finalized and not reachable:
+                try:
+                    installation_finished = (
+                        self.provider.get_power_status(node.id) == PowerState.OFF
+                    )
+                except (ConnectionError, TimeoutError) as error:
+                    logger.warning(
+                        "Transient boot monitoring failure on %s: %s",
+                        node.hostname,
+                        error,
+                    )
+                    time.sleep(min(5, max(0, deadline - time.monotonic())))
+                    continue
+            if not finalized and installation_finished:
                 if (
                     reachable
                     and self.cluster.manifest.bootstrap.method
