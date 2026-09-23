@@ -191,3 +191,30 @@ passed on the bastion. SHA-256 of `SHA256SUMS`:
 A fresh audit of **42** complete tuning/comparison runs revalidated their full
 outputs and exit statuses and confirmed **4179.1 GFLOPS** as the maximum.
 The final package retains the exact replayed input and Bash launch scripts.
+
+### Post-submission Intel documentation review (2026-09-23)
+
+The on-time `~/submission` is frozen at the user's request. Extended tuning uses
+`/shared/hpl/extended-20260923T194450` and retains the original 21:44:50 UTC end.
+The runtime experiments use self-built Netlib HPL, not Intel's distributed HPL
+binary. Intel libraries, compiler, and MPI were explicitly allowed by the user.
+
+Primary references and the resulting controls:
+
+- [Intel oneMKL GEMM thread partitioning](https://www.intel.com/content/www/us/en/docs/onemkl/developer-guide-linux/2026-0/mkl-num-stripes.html):
+  compare default partitioning with `MKL_NUM_STRIPES=1` and `3` at 18 threads per
+  rank (one rank/socket), and at six threads per rank. The runner exports the
+  setting explicitly through Open MPI and captures it in each immutable case.
+- [Intel LINPACK parameter guidance](https://www.intel.com/content/www/us/en/docs/onemkl/developer-guide-linux/2026-0/configuring-parameters.html):
+  align N to NB × LCM(P,Q), use P ≤ Q, and budget matrix storage plus workspace.
+  Intel recommends NB=384 for its AVX-512 LINPACK distribution. Our Netlib build
+  also tests 192, 256, and 512; measured results select the candidate.
+- [Intel threading controls](https://www.intel.com/content/www/us/en/docs/onemkl/developer-guide-linux/2023-1/mkl-dynamic.html):
+  `MKL_DYNAMIC=FALSE` and explicit `MKL_NUM_THREADS` were already used in all
+  Intel comparisons. Core binding and one physical-core allocation per worker
+  prevent rank/thread oversubscription.
+- [Building Netlib HPL with Intel libraries](https://www.intel.com/content/www/us/en/docs/onemkl/developer-guide-linux/2026-0/building-the-netlib-hpl-from-source-code.html):
+  vendor LINPACK-specific controls are not assumed to apply to Netlib HPL.
+
+Runtime overrides are retained through checkpoint recovery and the packaged
+repeat. A failed or incomplete solve cannot become the selected result.

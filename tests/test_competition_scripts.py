@@ -1,5 +1,6 @@
 """Competition correctness checks without requiring deployment infrastructure."""
 
+import json
 import runpy
 from pathlib import Path
 
@@ -288,7 +289,11 @@ def test_extended_recovery_requires_completed_valid_measurement(tmp_path, dat, o
     (run / "metadata.txt").write_text("2026-09-23T20:00:00+00:00\n")
     (run / "finished.txt").write_text("2026-09-23T20:00:02+00:00\n")
     (run / "exit-status.txt").write_text("0\n")
+    (run.parent / "plan.json").write_text(
+        json.dumps({"phase": "screen", "environment": {"MKL_NUM_STRIPES": "3"}})
+    )
     records = extended["recover_cases"](tmp_path, [], dat)
+    assert records[0]["environment"] == {"MKL_NUM_STRIPES": "3"}
     assert records[0]["result"]["gflops"] == 183
     assert records[0]["rpn"] == 1
     assert records[0]["wall_seconds"] == 2
