@@ -1,6 +1,7 @@
 spack:
   specs:
-    - hpl@2.3 ^openmpi@5.0.5 fabrics={{ 'ucx' if transport == 'ucx' else 'none' }} ^openblas@0.3.28 threads=openmp
+    - hpl@2.3 ^openmpi@5.0.5 fabrics={{ 'ucx' if transport == 'ucx' else 'none' }} ^openblas@0.3.28 threads=openmp ~dynamic_dispatch{% if transport == 'ucx' %} ^ucx@1.17.0 +verbs +rc +ud +mlx5_dv +cma{% endif %}
+
   concretizer:
     unify: true
     reuse: false

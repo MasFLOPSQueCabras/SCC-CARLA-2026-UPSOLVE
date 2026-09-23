@@ -78,3 +78,12 @@ Fresh installation started at 17:46 UTC. Source builds use 36 jobs on the head n
 The user confirmed a deadline two hours after 17:43:32 UTC: **19:43:32 UTC today**.
 Tuning must fit the time remaining after setup, with time reserved for validation
 and delivery; the earlier two-hour tuning cap does not extend this deadline.
+
+All three fresh installs reached SSH by 18:02 UTC. InfiniBand port verification,
+peer SSH over `10.148.72.1–3`, unlimited memlock and shared storage access passed.
+The first concretization exposed UCX's default disabled verbs/RC transports.
+The source build was deliberately interrupted before accepting the environment;
+the recipe now requests UCX 1.17.0 with verbs, RC, UD, mlx5 direct verbs and CMA.
+OpenBLAS uses its detected CPU target without unnecessary multi-architecture
+dispatch kernels. Configuration resumed without reinstalling the OS.
+The selected compiler is GCC 14.3.1 and the target is `skylake_avx512`.

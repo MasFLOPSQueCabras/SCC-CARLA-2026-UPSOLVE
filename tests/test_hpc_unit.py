@@ -139,3 +139,26 @@ def test_shared_configuration_refuses_missing_nodes_before_ansible(
     with pytest.raises(ValueError, match="all declared nodes"):
         backend.configure(cluster.nodes([7]))
     run.assert_not_called()
+
+
+@pytest.mark.parametrize("transport", ["ucx", "tcp"])
+def test_source_build_enables_required_infiniband_transports(transport):
+    import yaml
+    from jinja2 import Template
+
+    template = Path(__file__).resolve().parents[1] / (
+        "src/cabritactl/ansible/roles/spack/templates/spack.yaml.j2"
+    )
+    rendered = Template(template.read_text()).render(
+        transport=transport,
+        nfs_mount_dir="/shared",
+        build_jobs=36,
+        spack_mirror=None,
+    )
+    spec = yaml.safe_load(rendered)["spack"]["specs"][0]
+    if transport == "ucx":
+        ucx = spec.split("^ucx@1.17.0 ")[1].split()
+        assert {"+verbs", "+rc", "+ud", "+mlx5_dv", "+cma"} <= set(ucx)
+    else:
+        assert "^ucx" not in spec
+        assert "fabrics=none" in spec
