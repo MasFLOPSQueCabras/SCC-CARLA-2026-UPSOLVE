@@ -87,3 +87,9 @@ the recipe now requests UCX 1.17.0 with verbs, RC, UD, mlx5 direct verbs and CMA
 OpenBLAS uses its detected CPU target without unnecessary multi-architecture
 dispatch kernels. Configuration resumed without reinstalling the OS.
 The selected compiler is GCC 14.3.1 and the target is `skylake_avx512`.
+
+UCX 1.17.0 then exposed a build incompatibility between enabled mlx5 direct verbs
+and disabled device memory: `uct_ib_mlx5_devx_mem_t` lacked its `dm` member.
+Enabled `+dm`, preserving the 57 completed dependencies, and rebuilt UCX/MPI/HPL.
+The failed build log is retained as `configure-failed-ucx-dm.log`; the resumed
+source build is logged on the head node in `/shared/hpl/build-dm.log`.

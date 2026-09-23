@@ -158,7 +158,7 @@ def test_source_build_enables_required_infiniband_transports(transport):
     spec = yaml.safe_load(rendered)["spack"]["specs"][0]
     if transport == "ucx":
         ucx = spec.split("^ucx@1.17.0 ")[1].split()
-        assert {"+verbs", "+rc", "+ud", "+mlx5_dv", "+cma"} <= set(ucx)
+        assert {"+verbs", "+rc", "+ud", "+mlx5_dv", "+dm", "+cma"} <= set(ucx)
     else:
         assert "^ucx" not in spec
         assert "fabrics=none" in spec

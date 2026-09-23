@@ -104,7 +104,9 @@ source-built Spack stack; binary caches are disabled.
 ## Build and launch details
 
 HPL 2.3, OpenMPI 5.0.5 with UCX, and OpenBLAS 0.3.28 are built using the pinned
-Spack recipes. `scripts/build-evidence/spack.lock` records exact transitive
+Spack recipes and GCC C/Fortran compilers. OpenBLAS uses OpenMP threading and
+the detected CPU target. UCX enables InfiniBand verbs, RC, UD, mlx5 direct verbs,
+device memory and CMA. `scripts/build-evidence/spack.lock` records exact transitive
 versions, variants and target architecture. `compiler.txt`, `spack-config.txt`,
 `hpl-libraries.txt` and `spack-build-records.tar.gz` record compilers, build flags,
 build environments and logs. No vendor HPL binary is used. The pinned Spack recipe rewrites the HPL configure
