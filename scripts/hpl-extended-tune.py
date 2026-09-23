@@ -36,16 +36,87 @@ def make_input(template, n, nb, p, q, parameters):
     return result
 
 
+def recover_cases(output, records, template):
+    """Recover only actual completed runs; never synthesize an MPI exit status."""
+    known = {r["directory"] for r in records}
+    defaults = template.splitlines()
+    for case in sorted(output.glob("case-*")):
+        run = case / "run"
+        if str(run.resolve()) in known:
+            continue
+        if not (run / "finished.txt").is_file():
+            raise RuntimeError(f"Unfinished attempt requires inspection: {run}")
+        values = {}
+        for line in (run / "settings.sh").read_text().splitlines():
+            line = line.removeprefix("export ")
+            if line and not line.startswith("#") and "=" in line:
+                key, value = line.split("=", 1)
+                words = shlex.split(value, comments=True)
+                if words:
+                    values[key] = words[0]
+        source = (run / "HPL.dat").read_text()
+        dimensions = HELPERS["HELPERS"]["input_case"](source)
+        binary = values["HPL_BINARY"]
+        variant = (
+            binary.split("/intel-builds/")[1].split("/")[0]
+            if "/intel-builds/" in binary
+            else "openblas"
+        )
+        begun = dt.datetime.fromisoformat(
+            (run / "metadata.txt").read_text().splitlines()[0]
+        ).timestamp()
+        finished = dt.datetime.fromisoformat(
+            (run / "finished.txt").read_text().strip()
+        ).timestamp()
+        status = int((run / "exit-status.txt").read_text())
+        record = {
+            "directory": str(run.resolve()),
+            "phase": json.loads((case / "plan.json").read_text()).get("phase", "screen")
+            if (case / "plan.json").exists()
+            else "screen",
+            "variant": variant,
+            "rpn": int(values["HPL_RANKS"]) // 3,
+            "threads": int(values["OMP_NUM_THREADS"]),
+            **dimensions,
+            "parameters": {
+                key: int(source.splitlines()[index].split()[0])
+                for key, index in PARAMETERS.items()
+                if int(source.splitlines()[index].split()[0])
+                != int(defaults[index].split()[0])
+            },
+            "exit_status": status,
+            "wall_seconds": max(1, finished - begun),
+            "wall_time_source": "metadata timestamps; initial startup excluded",
+            "recovered": True,
+        }
+        if status == 0:
+            record["result"] = HELPERS["HELPERS"]["result"](
+                (run / "HPL.out").read_text(), source
+            )
+        records.append(record)
+    return records
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("output", type=Path)
     parser.add_argument("--deadline", required=True, help="ISO 8601 UTC deadline")
+    parser.add_argument("--resume", action="store_true")
+    parser.add_argument(
+        "--commit", help="Full tested Cabrita hash for the packaged repeat"
+    )
     args = parser.parse_args()
     deadline = dt.datetime.fromisoformat(args.deadline).timestamp()
     start = time.time()
     if not 900 <= deadline - start <= 7200:
         parser.error("Deadline must be between 15 minutes and two hours away")
-    args.output.mkdir(parents=True, exist_ok=False)
+    if args.resume:
+        session = json.loads((args.output / "session.json").read_text())
+        if session["deadline_utc"] != args.deadline:
+            parser.error("Resume must retain the original deadline")
+        start = dt.datetime.fromisoformat(session["start_utc"]).timestamp()
+    else:
+        args.output.mkdir(parents=True, exist_ok=False)
     hosts = [f"10.148.72.{i}" for i in (1, 2, 3)]
     machines = [HELPERS["topology"](host) for host in hosts]
     (args.output / "topology.json").write_text(
@@ -62,7 +133,12 @@ def main():
         variants[name] = Path(
             f"/shared/hpl/oneapi-comparison/{name}-36x1/settings.sh"
         ).read_text()
-    records = []
+    records = (
+        json.loads((args.output / "attempts.json").read_text()) if args.resume else []
+    )
+    if args.resume:
+        records = recover_cases(args.output, records, template)
+        (args.output / "attempts.json").write_text(json.dumps(records, indent=2))
     screen_end = min(start + 2400, deadline - 4200)
     baseline = json.loads(
         Path("/shared/hpl/results/final-large/result.json").read_text()
@@ -90,8 +166,26 @@ def main():
         parameters=None,
         allowance=240,
         phase="screen",
+        package=None,
     ):
         parameters = parameters or {}
+        if phase == "screen":
+            for existing in records:
+                if all(
+                    existing.get(k) == v
+                    for k, v in {
+                        "phase": phase,
+                        "variant": variant,
+                        "rpn": rpn,
+                        "threads": threads,
+                        "p": p,
+                        "q": q,
+                        "nb": nb,
+                        "n": n,
+                        "parameters": parameters,
+                    }.items()
+                ):
+                    return existing
         remaining = deadline - time.time() - 300
         if phase == "screen":
             remaining = min(remaining, screen_end - time.time())
@@ -121,16 +215,37 @@ def main():
             f"{case.name}: phase={phase} variant={variant} ranks/node={rpn} threads={threads} N={n} NB={nb} grid={p}x{q} parameters={parameters} timeout={timeout}",
             flush=True,
         )
+        (case / "plan.json").write_text(
+            json.dumps(
+                {
+                    "phase": phase,
+                    "variant": variant,
+                    "rpn": rpn,
+                    "threads": threads,
+                    "p": p,
+                    "q": q,
+                    "nb": nb,
+                    "n": n,
+                    "parameters": parameters,
+                },
+                indent=2,
+            )
+        )
         begun = time.time()
         with (case / "launcher.log").open("w") as log:
-            completed = subprocess.run(
-                [
+            command = (
+                ["bash", str(package / "scripts/run-hpl.sh"), str(case / "run")]
+                if package
+                else [
                     "bash",
                     str(HERE / "hpl-eval.sh"),
                     str(case / "HPL.dat"),
                     str(case / "settings.sh"),
                     str(case / "run"),
-                ],
+                ]
+            )
+            completed = subprocess.run(
+                command,
                 stdout=log,
                 stderr=subprocess.STDOUT,
                 check=False,
@@ -222,26 +337,58 @@ def main():
         key=lambda r: r["result"]["gflops"],
         reverse=True,
     )
-    # Two large candidates, then an exact repeat. Reserve five minutes for packaging.
-    selected = good[:2]
-    for index in range(3):
-        current = max(
-            (r for r in records if "result" in r), key=lambda r: r["result"]["gflops"]
+    # Prefer one memory-heavy candidate and its packaged repeat over three smaller solves.
+    for index in range(2):
+        candidate = (
+            good[0]
+            if index == 0
+            else max(
+                (r for r in records if "result" in r),
+                key=lambda r: r["result"]["gflops"],
+            )
         )
-        candidate = selected[index] if index < 2 else current
-        allowance = (deadline - time.time() - 300) / (3 - index)
+        allowance = (deadline - time.time() - 300) / (2 - index)
         nb, p, q = candidate["nb"], candidate["p"], candidate["q"]
         alignment = nb * math.lcm(p, q)
-        # Runtime model uses complete measured wall time and a 20% safety reserve.
-        speed = candidate["n"] ** 3 / max(candidate["wall_seconds"], 1)
-        timed_n = int((allowance * 0.8 * speed) ** (1 / 3)) // alignment * alignment
-        n = min(HELPERS["matrix_limit"](memory, 3, 0.78, nb, p, q), timed_n)
-        if index == 2:
+        # Use the measured N=129024 baseline to avoid extrapolating only tiny cases.
+        speed = baseline["n"] ** 3 / (baseline["seconds"] + 15)
+        timed_n = int((allowance * 0.97 * speed) ** (1 / 3)) // alignment * alignment
+        n = min(HELPERS["matrix_limit"](memory, 3, 0.88, nb, p, q), timed_n)
+        package = None
+        if index == 1:
             n = candidate["n"]
-            if candidate["wall_seconds"] * 1.15 > allowance:
+            if candidate["wall_seconds"] * 1.08 > allowance:
                 print("Insufficient time to repeat best input safely", flush=True)
                 break
-        n = max(n, candidate["n"])
+            if args.commit:
+                evidence = Path("/shared/hpl/build-evidence")
+                if candidate["variant"] != "openblas":
+                    evidence = args.output / "build-evidence"
+                    subprocess.run(
+                        [
+                            "bash",
+                            str(HERE / "hpl-oneapi-evidence.sh"),
+                            candidate["variant"],
+                            str(evidence),
+                        ],
+                        check=True,
+                    )
+                package = args.output / "replay-package"
+                subprocess.run(
+                    [
+                        "python3",
+                        str(HERE / "hpl-submit.py"),
+                        candidate["directory"],
+                        str(evidence),
+                        str(package),
+                        "--commit",
+                        args.commit,
+                    ],
+                    check=True,
+                )
+                subprocess.run(
+                    ["sha256sum", "--check", "SHA256SUMS"], cwd=package, check=True
+                )
         execute(
             candidate["variant"],
             candidate["rpn"],
@@ -249,10 +396,11 @@ def main():
             p,
             q,
             nb,
-            n,
+            max(n, candidate["n"]),
             candidate["parameters"],
             allowance=allowance,
-            phase="repeat" if index == 2 else "large",
+            phase="repeat" if index else "large",
+            package=package,
         )
     (args.output / "completed.json").write_text(
         json.dumps(

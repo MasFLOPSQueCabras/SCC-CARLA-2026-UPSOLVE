@@ -267,3 +267,28 @@ def test_submission_packages_one_valid_result_with_source(
     assert checked.returncode == 0
     repeated = subprocess.run(command, capture_output=True, text=True, check=False)
     assert repeated.returncode != 0
+
+
+def test_extended_recovery_requires_completed_valid_measurement(tmp_path, dat, output):
+    extended = runpy.run_path(str(ROOT / "scripts/hpl-extended-tune.py"))
+    run = tmp_path / "case-001/run"
+    run.mkdir(parents=True)
+    with pytest.raises(RuntimeError, match="Unfinished attempt"):
+        extended["recover_cases"](tmp_path, [], dat)
+    (run / "HPL.dat").write_text(dat)
+    (run / "HPL.out").write_text(output)
+    (run / "settings.sh").write_text(
+        "HPL_BINARY=/shared/environment/view/bin/xhpl\n"
+        "export HPL_RANKS=3\nexport OMP_NUM_THREADS=1\n"
+    )
+    (run / "metadata.txt").write_text("2026-09-23T20:00:00+00:00\n")
+    (run / "finished.txt").write_text("2026-09-23T20:00:02+00:00\n")
+    (run / "exit-status.txt").write_text("0\n")
+    records = extended["recover_cases"](tmp_path, [], dat)
+    assert records[0]["result"]["gflops"] == 183
+    assert records[0]["rpn"] == 1
+    assert records[0]["wall_seconds"] == 2
+    assert len(extended["recover_cases"](tmp_path, records, dat)) == 1
+    (run / "HPL.out").write_text(output.replace("End of Tests.", ""))
+    with pytest.raises(ValueError):
+        extended["recover_cases"](tmp_path, [], dat)

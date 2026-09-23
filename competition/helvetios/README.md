@@ -167,7 +167,7 @@ Keep the on-time submission immutable when doing further experiments. The
 extended search compares N≈73728 screens, NB 192/256/320/384/512/640, 6×18 and
 9×12 grids, intermediate hybrid layouts, and the self-built Intel alternatives.
 It then compares HPL broadcast, lookahead and panel options before allocating
-the remaining time to two larger candidates and an exact repeat. Parameter
+the remaining time to a memory-heavy candidate and an exact packaged repeat. Parameter
 meanings follow [Netlib's HPL tuning guide](https://www.netlib.org/benchmark/hpl/tuning.html).
 Numerical checks remain enabled for every attempt.
 
@@ -176,7 +176,7 @@ one shared script directory, then launch a detached job on node1:
 
 ```bash
 nohup python3 /shared/hpl/extended-scripts/hpl-extended-tune.py \
-  /shared/hpl/NEW_EXTENDED_RUN --deadline YYYY-MM-DDTHH:MM:SS+00:00 \
+  /shared/hpl/NEW_EXTENDED_RUN --deadline YYYY-MM-DDTHH:MM:SS+00:00 --commit FULL_TESTED_COMMIT_HASH \
   > /shared/hpl/NEW_EXTENDED_RUN.log 2>&1 < /dev/null &
 ```
 
@@ -186,3 +186,9 @@ use a separate immutable directory and the shared evaluation lock. Only complete
 runs with zero MPI exit and passing residual checks can become the new best.
 Package improvements separately from `~/submission` unless replacement has been
 authorized; the user requested preserving the on-time submission for this session.
+
+The extended driver accepts `--resume` after its previous controller and MPI
+processes have stopped. It retains the original deadline and validates completed
+run files when recovering a case whose controller record was interrupted. An
+unfinished MPI run is never silently accepted. Large-run sizing uses the measured
+N=129024 baseline, available RAM, and time reserved for an exact packaged repeat.
